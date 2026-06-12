@@ -1,0 +1,2 @@
+C:/dswd/mobile/E-commerce-Complete-Flutter-UI-master/android/app/.cxx/Debug/44j6b305/x86/CMakeFiles/edit_cache.dir
+C:/dswd/mobile/E-commerce-Complete-Flutter-UI-master/android/app/.cxx/Debug/44j6b305/x86/CMakeFiles/rebuild_cache.dir

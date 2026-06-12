@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "910193430774",
+    "project_id": "manifest-emblem-451812-h1",
+    "storage_bucket": "manifest-emblem-451812-h1.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:910193430774:android:9b4a6f11bc9473b1861cd7",
+        "android_client_info": {
+          "package_name": "com.example.shop"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDxJH9vcmSQhg2YLDgUFxk1jpUicAXBc-E"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

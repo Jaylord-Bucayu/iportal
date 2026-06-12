@@ -1,0 +1,105 @@
+name: shop
+description: FlutterShop is a premium E-commerce UI kit that you can use to build various e-commerce apps using Flutter that works on both Android & iOS. This kit contains 100+ nicely crafted minimal screens that cover everything you need for your shop app.
+
+publish_to: "none"
+
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.2.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+ 
+  cupertino_icons: ^1.0.2
+  flutter_svg: ^2.2.0
+  form_field_validator: ^1.1.0
+  cached_network_image: ^3.2.0
+  flutter_rating_bar: ^4.0.1
+  flutter_widget_from_html_core: ^0.15.1
+  animations: ^2.0.11
+  url_launcher: ^6.3.0
+  intl: ^0.18.0
+  local_auth: ^2.1.0
+  fl_chart: ^0.70.2
+  pdf: ^3.11.3
+  printing: ^5.14.2
+  firebase_core: ^3.13.0
+  firebase_messaging: ^15.2.5
+  riverpod: ^2.6.1
+  flutter_hooks: ^0.21.2
+  hooks_riverpod: ^2.6.1
+  openid_client: ^0.4.7
+  http: ^1.4.0
+  flutter_secure_storage: ^9.2.4
+  shared_preferences: ^2.5.3
+  path_provider: ^2.1.5
+  permission_handler: ^12.0.0+1
+  file_selector: ^1.0.3
+  file_picker: ^10.1.9
+  file_saver: ^0.2.14
+  qr_flutter: ^4.1.0
+  mobile_scanner: ^6.0.2
+  share_plus: ^11.1.0
+  webview_flutter: ^4.13.0
+  flutter_inappwebview: ^6.1.5
+  pdfx: ^2.4.0
+  flutter_gemma: 0.11.16
+  #flutter_pdfview: ^1.4.3
+  # syncfusion_flutter_pdfviewer: ^31.1.19
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+
+  flutter_lints: ^4.0.0
+  custom_lint: ^0.7.5
+  riverpod_lint: ^2.6.5
+  shimmer: ^3.0.0
+  table_calendar: ^3.0.9
+  flutter_native_splash: ^2.3.1  # check latest version
+
+flutter_native_splash:
+  color: "#ffffff"  # Background color of splash screen
+  image: assets/images/dswd-pilipinas.png  # Your logo image
+  android: true
+  ios: true  
+  
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/images/
+    - assets/icons/
+    - assets/Illustration/
+    - assets/flags/
+    - assets/logo/
+    - assets/screens/
+    - assets/files/
+    - assets/bot/
+    # - assets/models/gemma3-270m-it-q8.task
+    # - assets/models/Qwen3-0.6B.litertlm
+    # - assets/models/functiongemma-270M-it.task
+
+  fonts:
+    - family: Plus Jakarta
+      fonts:
+        - asset: assets/fonts/plus_jakarta/PlusJakartaDisplay-Regular.otf
+        - asset: assets/fonts/plus_jakarta/PlusJakartaDisplay-Medium.otf
+          weight: 500
+        - asset: assets/fonts/plus_jakarta/PlusJakartaDisplay-Bold.otf
+          weight: 700
+    - family: Grandis Extended
+      fonts:
+        - asset: assets/fonts/grandis_extended/GrandisExtended-Regular.ttf
+        - asset: assets/fonts/grandis_extended/GrandisExtended-Thin.ttf
+          weight: 300
+        - asset: assets/fonts/grandis_extended/GrandisExtended-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/grandis_extended/GrandisExtended-Bold.ttf
+          weight: 700
+        - asset: assets/fonts/grandis_extended/GrandisExtended-Black.ttf
+          weight: 900
