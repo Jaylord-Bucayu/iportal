@@ -16,21 +16,7 @@ class PassSlipScreen extends StatelessWidget {
           style: TextStyle(color: Colors.white),
         ),
         centerTitle: true,
-        iconTheme: const IconThemeData(color: Colors.white),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.qr_code_scanner, color: Colors.white),
-            tooltip: "Scan QR Code",
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const QrScannerScreen(),
-                ),
-              );
-            },
-          ),
-        ],
+        iconTheme: const IconThemeData(color: Colors.white)
       ),
       body: Stack(
         children: [

@@ -408,9 +408,7 @@ case leaveActionScreenRoute:
       final args = settings.arguments as Map<String, dynamic>?;
       final status = args?['status'] ?? 'for_supervisor_review';
       final authorityType = args?['authorityType'] ?? 'supervisor';
-      final authorityId = args?['authorityId'] is int
-          ? args!['authorityId'] as int
-          : int.tryParse(args?['authorityId']?.toString() ?? '') ?? 0;
+      final authorityId = int.tryParse(args?['authorityId']?.toString() ?? '') ?? 0;
       return MaterialPageRoute(
         builder: (_) => ForLeaveApprovalScreen(
           status: status,

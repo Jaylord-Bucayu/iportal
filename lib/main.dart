@@ -3,7 +3,6 @@ import 'dart:io'; // 👈 Add this for HttpOverrides
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_gemma/core/api/flutter_gemma.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:shop/firebase_options.dart';
 import 'package:shop/route/route_constants.dart';
@@ -30,7 +29,7 @@ void main() async {
 
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   FirebaseMessaging.onBackgroundMessage(_backgroundMessage);
-  FlutterGemma.initialize(); // ← required before anything else
+  //FlutterGemma.initialize(); // ← required before anything else
 
   runApp(const ProviderScope(child: MyApp()));
 }

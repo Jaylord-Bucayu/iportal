@@ -15,6 +15,8 @@ import 'package:shop/services/leaves/leave_api.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 
+import '../../../entry_point.dart';
+
 class EventItem {
   final String id;
   final String leave_type;
@@ -191,7 +193,7 @@ class _LeavesScreenState extends ConsumerState<LeavesScreen> {
   @override
   Widget build(BuildContext context) {
     final authUser = ref.watch(authProvider);
-    final staffId = int.tryParse(authUser?.staffId.toString() ?? '0') ?? 0;
+    final staffId = int.parse(authUser!.staffId.toString());
     final primaryColor = Colors.primaries[4];
     final roles = authUser?.roles ?? [];
     final double aiButtonBottom = pendingLeaves.isEmpty ? 20 : 90;
@@ -215,7 +217,14 @@ class _LeavesScreenState extends ConsumerState<LeavesScreen> {
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new,
               color: Colors.black, size: 20.0),
-          onPressed: () => Navigator.of(context).pop(),
+          onPressed: () {
+            Navigator.of(context).pushAndRemoveUntil(
+              MaterialPageRoute(
+                builder: (_) => const EntryPoint(),
+              ),
+                  (route) => false,
+            );
+          },
         ),
       actions: [
   Padding(

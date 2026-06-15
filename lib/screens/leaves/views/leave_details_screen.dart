@@ -134,12 +134,17 @@ class _LeaveDetailScreenState extends ConsumerState<LeaveDetailScreen>
       final url = Uri.parse(
           'http://172.31.16.69/api/v1/leave-requests/${widget.leaveId}');
       final response = await http.get(url, headers: {
-        // 'Authorization': 'Bearer YOUR_ACCESS_TOKEN',
         'Accept': 'application/json',
       });
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
+
+        // DEBUG - remove after fix
+        debugPrint('=== RAW API RESPONSE ===');
+        debugPrint(response.body);
+        debugPrint('========================');
+
         setState(() {
           leave = Map<String, dynamic>.from(data['data']);
           isLoading = false;
@@ -147,11 +152,13 @@ class _LeaveDetailScreenState extends ConsumerState<LeaveDetailScreen>
         _startEntryAnimations();
       } else {
         setState(() {
-          error = 'Failed to load leave';
+          error = 'Failed to load leave (${response.statusCode})';
           isLoading = false;
         });
       }
-    } catch (e) {
+    } catch (e, stackTrace) {          // 👈 add stackTrace
+      debugPrint('ERROR: $e');
+      debugPrint('STACK: $stackTrace'); // 👈 this shows the exact line
       setState(() {
         error = e.toString();
         isLoading = false;
@@ -420,11 +427,15 @@ class _LeaveDetailScreenState extends ConsumerState<LeaveDetailScreen>
     }
 
     final leaveTypeId = leave!['leave_type_id'] as int? ?? 0;
-    final leaveType = leaveTypeNames[leaveTypeId] ?? 'Unknown Leave';
+    final leaveType = (leave!['leave_type'] as Map<String, dynamic>?)?['name']
+        ?? leaveTypeNames[leave!['leave_type_id'] as int? ?? 0]
+        ?? 'Unknown Leave';
     const leaveColor =  Colors.black;
-    final totalDays = leave!['total_days'] ?? '-';
+    final totalDays = leave!['total_days'];
     final applicationDate = leave!['created_at'] ?? '-';
-    final leaveDates = jsonDecode(leave!['leave_dates'] ?? '[]') as List;
+    final leaveDates = leave!['leave_dates'] != null
+        ? (jsonDecode(leave!['leave_dates']) as List? ?? [])
+        : <dynamic>[];
     final staffImageUrl =
         'https://fo2-staff-search.dswd.gov.ph/images/${leave!['staff_id']}.jpg';
 
@@ -513,8 +524,7 @@ class _LeaveDetailScreenState extends ConsumerState<LeaveDetailScreen>
                                           color: Color(0xFF65676B),
                                         ),
                                       ),
-                                      Text(
-                                        'Day${totalDays == 1.00 ? '' : 's'} requested',
+                                      Text('Day${(double.tryParse(totalDays?.toString() ?? '') ?? 0) == 1.0 ? '' : 's'} requested',
                                         style: const TextStyle(
                                           fontSize: 13,
                                           fontWeight: FontWeight.w500,
@@ -523,7 +533,9 @@ class _LeaveDetailScreenState extends ConsumerState<LeaveDetailScreen>
                                       ),
                                       const SizedBox(height: 6),
                                       Text(
-                                        '${double.parse(totalDays.toString()).toStringAsFixed(2)}',
+                                          totalDays != null
+                                              ? double.tryParse(totalDays.toString())?.toStringAsFixed(2) ?? '-'
+                                              : '-',
                                         style: TextStyle(
                                           fontSize: 36,
                                           fontWeight: FontWeight.w800,
@@ -734,7 +746,7 @@ class _LeaveDetailScreenState extends ConsumerState<LeaveDetailScreen>
 
                     // Attachments card
                     if (leave!['attachments'] != null &&
-                        (leave!['attachments'] as List).isNotEmpty)
+                        (leave!['attachments'] as List?)?.isNotEmpty == true)
                       SliverToBoxAdapter(
                         child: _AnimatedCard(
                           delay: const Duration(milliseconds: 260),
