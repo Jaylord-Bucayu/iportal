@@ -5,11 +5,11 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-final uri = Uri.parse('https://fo2-auth.dswd.gov.ph/realms/dswd-fo2');
+final uri = Uri.parse('https://172.31.16.53/realms/dswd-fo2');
 
 /// Authenticate with Keycloak using username/password and get token.
 Future<Map<String, dynamic>?> authenticateWithKeycloak(String username, String password) async {
-  final url = Uri.parse('https://fo2-auth.dswd.gov.ph/realms/dswd-fo2/protocol/openid-connect/token');
+  final url = Uri.parse('https://172.31.16.53/realms/dswd-fo2/protocol/openid-connect/token');
 
   final response = await http.post(
     url,
@@ -18,7 +18,7 @@ Future<Map<String, dynamic>?> authenticateWithKeycloak(String username, String p
     },
     body: {
       'client_id': 'dswd-fo2-iportal-leave',
-      'client_secret': 'laEXyBsfwFW6HZUsYNFtiaujiAlM7Qsn',
+      'client_secret': '9pA3B4szE8VmoYyW287hON7q6cqdE5RP',
       'scope': 'openid profile email',
       'grant_type': 'password',
       'username': username,

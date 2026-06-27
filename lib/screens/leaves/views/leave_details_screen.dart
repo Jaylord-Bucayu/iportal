@@ -84,7 +84,7 @@ class _LeaveDetailScreenState extends ConsumerState<LeaveDetailScreen>
       if (action == 'approve') {
         url = Uri.parse(
             'http://172.31.16.69/api/v1/leave-pending/${widget.leaveId}/approve');
-      } else if (action == 'reject') {
+      } else if (action == 'disapproved') {
         url = Uri.parse(
             'http://172.31.16.69/api/v1/leave-pending/${widget.leaveId}/reject');
       } else {
@@ -366,7 +366,7 @@ class _LeaveDetailScreenState extends ConsumerState<LeaveDetailScreen>
 
                 // Confirm button
                 _MetaButton(
-                  label: isApprove ? 'Confirm Approve' : 'Confirm Reject',
+                  label: isApprove ? 'Confirm Approve' : 'Confirm Disapprove',
                   backgroundColor: accentColor,
                   textColor: Colors.white,
                   onTap: () {
@@ -938,7 +938,7 @@ class _LeaveDetailScreenState extends ConsumerState<LeaveDetailScreen>
                         children: [
                           Expanded(
                             child: _ActionButton(
-                              label: 'Reject',
+                              label: 'Disapprove',
                               foregroundColor: const Color(0xFFE2420E),
                               backgroundColor: const Color(0xFFFFF0ED),
                               isLoading: actionLoading,
@@ -946,13 +946,13 @@ class _LeaveDetailScreenState extends ConsumerState<LeaveDetailScreen>
                                   ? null
                                   : () => _showLeaveModal(
                                         context: context,
-                                        action: 'reject',
+                                        action: 'disapproved',
                                         staffName:
                                             leave!['staff_name'] ?? 'No Name',
                                         leaveType: leaveType,
                                         imageUrl: staffImageUrl,
                                         description:
-                                            'Are you sure you want to reject this leave? You can add optional remarks below.',
+                                            'Are you sure you want to disapproved this leave? You can add optional remarks below.',
                                         accentColor: const Color(0xFFE2420E),
                                       ),
                             ),

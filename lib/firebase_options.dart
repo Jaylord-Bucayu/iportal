@@ -4,23 +4,10 @@ import 'package:firebase_core/firebase_core.dart' show FirebaseOptions;
 import 'package:flutter/foundation.dart'
     show defaultTargetPlatform, kIsWeb, TargetPlatform;
 
-/// Default [FirebaseOptions] for use with your Firebase apps.
-///
-/// Example:
-/// ```dart
-/// import 'firebase_options.dart';
-/// // ...
-/// await Firebase.initializeApp(
-///   options: DefaultFirebaseOptions.currentPlatform,
-/// );
-/// ```
 class DefaultFirebaseOptions {
   static FirebaseOptions get currentPlatform {
     if (kIsWeb) {
-      throw UnsupportedError(
-        'DefaultFirebaseOptions have not been configured for web - '
-        'you can reconfigure this by running the FlutterFire CLI again.',
-      );
+      return web; // ← changed from throw to return
     }
     switch (defaultTargetPlatform) {
       case TargetPlatform.android:
@@ -30,17 +17,17 @@ class DefaultFirebaseOptions {
       case TargetPlatform.macOS:
         throw UnsupportedError(
           'DefaultFirebaseOptions have not been configured for macos - '
-          'you can reconfigure this by running the FlutterFire CLI again.',
+              'you can reconfigure this by running the FlutterFire CLI again.',
         );
       case TargetPlatform.windows:
         throw UnsupportedError(
           'DefaultFirebaseOptions have not been configured for windows - '
-          'you can reconfigure this by running the FlutterFire CLI again.',
+              'you can reconfigure this by running the FlutterFire CLI again.',
         );
       case TargetPlatform.linux:
         throw UnsupportedError(
           'DefaultFirebaseOptions have not been configured for linux - '
-          'you can reconfigure this by running the FlutterFire CLI again.',
+              'you can reconfigure this by running the FlutterFire CLI again.',
         );
       default:
         throw UnsupportedError(
@@ -48,6 +35,17 @@ class DefaultFirebaseOptions {
         );
     }
   }
+
+  // ← New web config added
+  static const FirebaseOptions web = FirebaseOptions(
+    apiKey: 'AIzaSyDdGS3fMbLnElKYGi3rO_2zeH_vlAPCuyQ',
+    appId: '1:910193430774:web:69eb4a15e3970632861cd7',
+    messagingSenderId: '910193430774',
+    projectId: 'manifest-emblem-451812-h1',
+    storageBucket: 'manifest-emblem-451812-h1.firebasestorage.app',
+    authDomain: 'manifest-emblem-451812-h1.firebaseapp.com',
+    measurementId: 'G-507PVY7XEW',
+  );
 
   static const FirebaseOptions android = FirebaseOptions(
     apiKey: 'AIzaSyDxJH9vcmSQhg2YLDgUFxk1jpUicAXBc-E',

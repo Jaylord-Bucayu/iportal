@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
-import 'package:shop/constants.dart'; // <- import your constants file
+import 'package:shop/constants.dart';
+import 'package:shop/route/route_constants.dart'; // <- import your constants file
 
 // ════════════════════════════════════════════════════
 // MODELS
@@ -566,12 +567,14 @@ class _LeaveCard extends StatelessWidget {
       borderRadius: BorderRadius.circular(16),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
-        onTap: () => showModalBottomSheet(
-          context: context,
-          isScrollControlled: true,
-          backgroundColor: Colors.transparent,
-          builder: (_) => _DetailSheet(leave: leave),
-        ),
+        onTap: () {
+          Navigator.pushNamed(
+            context,
+            leaveActionScreenRoute,
+            arguments: leave.id.toString(),
+          );
+        },
+
         child: Padding(
               padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
               child: Column(

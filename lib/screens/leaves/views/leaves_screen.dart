@@ -76,9 +76,9 @@ class _TypingIndicatorState extends State<_TypingIndicator>
 
     // stagger the dots
     Future.delayed(const Duration(milliseconds: 150),
-        () => mounted ? _controllers[1].forward() : null);
+            () => mounted ? _controllers[1].forward() : null);
     Future.delayed(const Duration(milliseconds: 300),
-        () => mounted ? _controllers[2].forward() : null);
+            () => mounted ? _controllers[2].forward() : null);
     _controllers[0].forward();
   }
 
@@ -226,57 +226,57 @@ class _LeavesScreenState extends ConsumerState<LeavesScreen> {
             );
           },
         ),
-      actions: [
-  Padding(
-    padding: const EdgeInsets.only(right: 8),
-    child: GestureDetector(
-      onTap: () {
-        Navigator.pushNamed(context, applyLeaveScreenRoute,
-            arguments: staffId);
-      },
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        decoration: BoxDecoration(
-          color: const Color(0xFFE7F0FF),         
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: const Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.add_circle_outline, size: 14, color: Color(0xFF0866FF)),
-            SizedBox(width: 4),
-            Text(
-              'Apply',
-              style: TextStyle(color: Color(0xFF0866FF), fontSize: 12,fontWeight: FontWeight.w600),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: GestureDetector(
+              onTap: () {
+                Navigator.pushNamed(context, applyLeaveScreenRoute,
+                    arguments: staffId);
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE7F0FF),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.add_circle_outline, size: 14, color: Color(0xFF0866FF)),
+                    SizedBox(width: 4),
+                    Text(
+                      'Apply',
+                      style: TextStyle(color: Color(0xFF0866FF), fontSize: 12,fontWeight: FontWeight.w600),
+                    ),
+                  ],
+                ),
+              ),
             ),
-          ],
-        ),
-      ),
-    ),
-  ),
-  Padding(
-    padding: const EdgeInsets.only(right: 12),
-    child: GestureDetector(
-      onTap: () {
-        Navigator.pushNamed(context, viewLeaveLedgerScreenRoute,
-            arguments: staffId);
-      },
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        decoration: BoxDecoration(
-          color: Colors.black,
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: const Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.assignment_outlined, size: 14, color: Colors.white),
-          ],
-        ),
-      ),
-    ),
-  ),
-],),
+          ),
+          Padding(
+            padding: const EdgeInsets.only(right: 12),
+            child: GestureDetector(
+              onTap: () {
+                Navigator.pushNamed(context, viewLeaveLedgerScreenRoute,
+                    arguments: staffId);
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.black,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.assignment_outlined, size: 14, color: Colors.white),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],),
       body: Stack(
         children: [
           RefreshIndicator(
@@ -302,23 +302,33 @@ class _LeavesScreenState extends ConsumerState<LeavesScreen> {
                   //   child: leaveCoachCard(
                   //   ),
                   // ),
-                   SizedBox(height: 12),
-                  // Upcoming Leaves (SUPERVISOR)
-                  if (roles.contains('supervisor'))
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: UpcomingLeaves(
-                          status: 'supervisor', authorityId: staffId),
-                    ),
-                  
                   SizedBox(height: 12),
-                  // Upcoming Leaves (APPROVER)
-                  if (roles.contains('approver'))
+                  // Upcoming Leaves (SUPERVISOR)
+                  if (roles.contains('supervisor') && roles.contains('approver') && staffId != null)
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       child: UpcomingLeaves(
-                          status: 'approver', authorityId: staffId),
-                    ),
+                        status: 'supervisor', // or whichever takes priority
+                        authorityId: staffId!,
+                      ),
+                    )
+                  else if (roles.contains('supervisor') && staffId != null)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: UpcomingLeaves(
+                        status: 'supervisor',
+                        authorityId: staffId!,
+                      ),
+                    )
+                  else if (roles.contains('approver') && staffId != null)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: UpcomingLeaves(
+                          status: 'approver',
+                          authorityId: staffId!,
+                        ),
+                      ),
+
 
                   const SizedBox(height: 8),
 
@@ -341,71 +351,71 @@ class _LeavesScreenState extends ConsumerState<LeavesScreen> {
                     child: loading
                         ? const Center(child: CircularProgressIndicator())
                         : leaveBalance == null
-                            ? const Center(
-                                child: Text(
-                                  "Failed to fetch leave balance",
-                                  style: TextStyle(color: Colors.red),
-                                ),
-                              )
-                            : Wrap(
-                                spacing: 8,
-                                runSpacing: 8,
-                                children: [
-                                  SizedBox(
-                                    width: (MediaQuery.of(context).size.width -
-                                            16 * 2 -
-                                            8) /
-                                        2,
-                                    child: leaveCard(
-                                      'Sick',
-                                      leaveBalance?.sickLeave.toString() ??
-                                          '0.0',
-                                      'assets/images/face-with-thermometer.png',
-                                      Colors.black,
-                                    ),
-                                  ),
-                                  SizedBox(
-                                    width: (MediaQuery.of(context).size.width -
-                                            16 * 2 -
-                                            8) /
-                                        2,
-                                    child: leaveCard(
-                                      'Vacation',
-                                      leaveBalance?.vacationLeave.toString() ??
-                                          '0.0',
-                                      'assets/images/tent.png',
-                                      Colors.black,
-                                    ),
-                                  ),
-                                  SizedBox(
-                                    width: (MediaQuery.of(context).size.width -
-                                            16 * 2 -
-                                            8) /
-                                        2,
-                                    child: leaveCard(
-                                      'SPL',
-                                      leaveBalance?.specialPrivilegeLeave
-                                              .toString() ??
-                                          '0.0',
-                                      'assets/images/spl.png',
-                                      Colors.black,
-                                    ),
-                                  ),
-                                  SizedBox(
-                                    width: (MediaQuery.of(context).size.width -
-                                            16 * 2 -
-                                            8) /
-                                        2,
-                                    child: leaveCard(
-                                      'Force',
-                                      leaveBalance?.forceLeave.toString() ??
-                                          '0.0',
-                                      'assets/images/force.png',
-                                      Colors.black,
-                                    ),
-                                  ),
-                                ],
-                              ),
+                        ? const Center(
+                      child: Text(
+                        "Failed to fetch leave balance",
+                        style: TextStyle(color: Colors.red),
+                      ),
+                    )
+                        : Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        SizedBox(
+                          width: (MediaQuery.of(context).size.width -
+                              16 * 2 -
+                              8) /
+                              2,
+                          child: leaveCard(
+                            'Sick',
+                            leaveBalance?.sickLeave.toString() ??
+                                '0.0',
+                            'assets/images/face-with-thermometer.png',
+                            Colors.black,
+                          ),
+                        ),
+                        SizedBox(
+                          width: (MediaQuery.of(context).size.width -
+                              16 * 2 -
+                              8) /
+                              2,
+                          child: leaveCard(
+                            'Vacation',
+                            leaveBalance?.vacationLeave.toString() ??
+                                '0.0',
+                            'assets/images/tent.png',
+                            Colors.black,
+                          ),
+                        ),
+                        SizedBox(
+                          width: (MediaQuery.of(context).size.width -
+                              16 * 2 -
+                              8) /
+                              2,
+                          child: leaveCard(
+                            'SPL',
+                            leaveBalance?.specialPrivilegeLeave
+                                .toString() ??
+                                '0.0',
+                            'assets/images/spl.png',
+                            Colors.black,
+                          ),
+                        ),
+                        SizedBox(
+                          width: (MediaQuery.of(context).size.width -
+                              16 * 2 -
+                              8) /
+                              2,
+                          child: leaveCard(
+                            'Force',
+                            leaveBalance?.forceLeave.toString() ??
+                                '0.0',
+                            'assets/images/force.png',
+                            Colors.black,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
 
                   const SizedBox(height: 8),
@@ -453,7 +463,7 @@ class _LeavesScreenState extends ConsumerState<LeavesScreen> {
                 ],
               ),
             ),
-            
+
           ),
 
           // Floating AI button
@@ -467,15 +477,15 @@ class _LeavesScreenState extends ConsumerState<LeavesScreen> {
           // ),
 
           // Pending Leave Request
-          if (!loading && pendingLeaves.isNotEmpty)
-            PendingLeaveRequest(
-              imagePath: leaveConfig[pendingLeaves[0]['leave_type']
-                  ['name']]?['image'],
-              leaveData: pendingLeaves[0],
-            ),
+          // if (!loading && pendingLeaves.isNotEmpty)
+          //   PendingLeaveRequest(
+          //     imagePath: leaveConfig[pendingLeaves[0]['leave_type']
+          //     ['name']]?['image'],
+          //     leaveData: pendingLeaves[0],
+          //   ),
         ],
       ),
-      
+
     );
   }
 
@@ -548,7 +558,7 @@ class _LeavesScreenState extends ConsumerState<LeavesScreen> {
 //     ],
 //   );
 // }
-  
+
   // ─────────────────────────────────────────────────────────────────────────
   // Existing widgets below — unchanged
   // ─────────────────────────────────────────────────────────────────────────

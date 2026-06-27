@@ -68,7 +68,7 @@ class LeaveApprovals {
   final String? forSupervisorReview;
   final String? forArdaReview;
   final String? approved;
-  final String? rejected;
+  final String? disapproved;
   final String? cancelled;
 
   const LeaveApprovals({
@@ -78,7 +78,7 @@ class LeaveApprovals {
     this.forSupervisorReview,
     this.forArdaReview,
     this.approved,
-    this.rejected,
+    this.disapproved,
     this.cancelled,
   });
 
@@ -89,7 +89,7 @@ class LeaveApprovals {
         forSupervisorReview: j['for_supervisor_review'],
         forArdaReview: j['for_approval'],
         approved: j['approved'],
-        rejected: j['rejected'],
+        disapproved: j['disapproved'],
         cancelled: j['cancelled'],
       );
 }
@@ -325,14 +325,14 @@ class LeaveRequestDetail {
     if (approvals?.approved != null) {
       add('Approved', 'Leave fully approved. Enjoy your time off!', 'approved',
           approvals!.approved);
-    } else if (approvals?.rejected != null) {
+    } else if (approvals?.disapproved != null) {
       add(
-        'Rejected',
+        'Disapproved',
         computationNotes.isNotEmpty
             ? computationNotes
-            : 'Leave request was rejected.',
-        'rejected',
-        approvals!.rejected,
+            : 'Leave request was disapproved.',
+        'Disapproved',
+        approvals!.disapproved,
       );
     } else if (approvals?.cancelled != null) {
       add('Cancelled', 'This leave request was cancelled.', 'cancelled',
@@ -401,13 +401,11 @@ class _StatusConfig {
             icon: Icons.schedule_rounded,
             label: 'Pending');
       case 'disapproved':
-      case 'rejected':
-      case 'declined':
         return const _StatusConfig(
             fg: _M.redFg,
             bg: _M.redBg,
             icon: Icons.cancel_rounded,
-            label: 'Rejected');
+            label: 'Disapproved');
       default:
         return const _StatusConfig(
             fg: _M.textSecondary,
