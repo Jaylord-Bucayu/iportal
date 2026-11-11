@@ -1,10 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:shop/constants.dart';
 import 'package:shop/route/route_constants.dart';
-import 'package:shop/services/keycloak_auth.dart';
 import 'package:shop/providers/auth_provider.dart';
-import 'components/login_form.dart';
 
 /// Login state provider
 final loginStateProvider = StateNotifierProvider<LoginStateNotifier, LoginState>((ref) {
@@ -43,7 +40,8 @@ class LoginStateNotifier extends StateNotifier<LoginState> {
   }
 
   void clearError() {
-    state = state.copyWith(errorMessage: null);
+    // copyWith can't set null (it keeps the old value), so rebuild the state.
+    state = LoginState(isLoading: state.isLoading);
   }
 }
 
@@ -55,84 +53,54 @@ class LoginScreen extends ConsumerStatefulWidget {
 }
 
 class _LoginScreenState extends ConsumerState<LoginScreen> {
-  final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
-  String? _email;
-  String? _password;
+  Future<void> _handleSsoLogin() async {
+    final loginNotifier = ref.read(loginStateProvider.notifier);
 
-  void _handleLogin() async {
-    final form = _formKey.currentState;
-    if (form == null) return;
-
-    if (!form.validate()) {
-      ref.read(loginStateProvider.notifier).setError('Please fill in all fields');
-      return;
-    }
-
-    form.save();
-
-    if (_email == null || _password == null) {
-      ref.read(loginStateProvider.notifier).setError('Email and password are required');
-      return;
-    }
-
-    ref.read(loginStateProvider.notifier).clearError();
-    ref.read(loginStateProvider.notifier).setLoading(true);
+    loginNotifier.clearError();
+    loginNotifier.setLoading(true);
 
     try {
-      final tokenResponse = await authenticateWithKeycloak(_email!, _password!);
+      final outcome = await ref.read(authProvider.notifier).loginWithSso();
 
       if (!mounted) return;
 
-      if (tokenResponse == null) {
-        throw Exception('Login failed. Please check your credentials.');
+      switch (outcome) {
+        case SsoOutcome.success:
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Login successful!'),
+              backgroundColor: Colors.green,
+              duration: Duration(seconds: 2),
+            ),
+          );
+          Navigator.pushNamedAndRemoveUntil(
+            context,
+            entryPointScreenRoute,
+                (route) => false,
+          );
+          break;
+
+        case SsoOutcome.mfaRequired:
+        case SsoOutcome.mfaSetupRequired:
+        // TODO: push your MFA screen here. The pending token is in
+        // ref.read(authProvider.notifier).ssoPendingToken
+          loginNotifier.setError(
+            'Multi-factor authentication is required for this account. '
+                'MFA is not available in the app yet.',
+          );
+          break;
+
+        case SsoOutcome.cancelled:
+        // User closed the browser — nothing to show.
+          break;
       }
-
-      final accessToken = tokenResponse['access_token'] as String? ?? '';
-      final refreshToken = tokenResponse['refresh_token'] as String? ?? '';
-
-      if (accessToken == null) {
-        throw Exception('No access token received from authentication');
-      }
-
-      final userInfo = await fetchUserInfo(accessToken);
-
-      if (!mounted) return;
-
-      final email = userInfo?['email'] as String? ?? _email ?? '';
-      final fullName = userInfo?['name'] as String? ?? 'User';
-
-      ref.read(authProvider.notifier).login(
-        accessToken: accessToken,
-        refreshToken: refreshToken,
-        email: email,
-        fullName: fullName,
-        staffId: int.parse(userInfo?['staffId']),
-      );
-
-      if (!mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Login successful!'),
-          backgroundColor: Colors.green,
-          duration: Duration(seconds: 2),
-        ),
-      );
-
-      Navigator.pushNamedAndRemoveUntil(
-        context,
-        entryPointScreenRoute,
-        (route) => false,
-      );
-    } on Exception catch (e) {
+    } catch (e) {
       if (mounted) {
-        ref.read(loginStateProvider.notifier).setError(
-          e.toString().replaceAll('Exception: ', ''),
-        );
+        loginNotifier.setError(e.toString().replaceAll('Exception: ', ''));
       }
     } finally {
       if (mounted) {
-        ref.read(loginStateProvider.notifier).setLoading(false);
+        loginNotifier.setLoading(false);
       }
     }
   }
@@ -143,89 +111,55 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     final size = MediaQuery.of(context).size;
 
     return Scaffold(
+      backgroundColor: Colors.white,
       body: SingleChildScrollView(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 24.0),
           child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               SizedBox(height: size.height * 0.06),
 
-              // Logo and title
-              Column(
-                children: [
-                  // Logo
-                 Center(
-                    child: Image.asset(
-                      'assets/images/dswd-pilipinas.png', // <-- change to your asset path
-                      width: 150,
-                      height: 150,
-                      fit: BoxFit.contain,
-                    ),
-                  ),
-               
-                                  
-
-                  // Title
-                  Text(
-                    "Welcome to IPortal",
-                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 24,
-                      color: Colors.black,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 12),
-
-                  // Subtitle
-                  Text(
-                    "Sign up or login below to manage your\nproject, task, and productivity",
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Colors.grey.shade600,
-                      height: 1.5,
-                      fontSize: 14,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                ],
+              // Logo
+              Image.asset(
+                'assets/images/dswd-iportal-logo.png', // <-- change to your asset path
+                width: 160,
+                height: 40,
+                fit: BoxFit.contain,
               ),
 
               SizedBox(height: size.height * 0.05),
+
+              // Title
+              Text(
+                "Sign in to your\nAccount",
+                style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 32,
+                  height: 1.15,
+                  color: Colors.black,
+                ),
+              ),
+              const SizedBox(height: 12),
+
+              // Subtitle
+              Text(
+                "Use your DSWD iPortal account to continue",
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: Colors.grey.shade600,
+                  fontSize: 14,
+                ),
+              ),
+
+              SizedBox(height: size.height * 0.045),
 
               // Error banner
               if (loginState.errorMessage != null)
                 _ErrorBanner(message: loginState.errorMessage!),
 
-              // Form
-              LogInForm(
-                formKey: _formKey,
-                onSavedEmail: (email) => _email = email,
-                onSavedPassword: (password) => _password = password,
-              ),
+              SizedBox(height: size.height * 0.02),
 
-              const SizedBox(height: 16),
-
-              // Forgot password link
-              // Align(
-              //   alignment: Alignment.centerLeft,
-              //   child: GestureDetector(
-              //     onTap: () {
-              //       // TODO: Implement forgot password
-              //     },
-              //     child: Text(
-              //       "Forgot Password?",
-              //       style: TextStyle(
-              //         color: Colors.grey.shade600,
-              //         fontSize: 13,
-              //         fontWeight: FontWeight.w500,
-              //       ),
-              //     ),
-              //   ),
-              // ),
-
-              SizedBox(height: size.height * 0.04),
-
-              // Login button
+              // SSO button
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
@@ -239,63 +173,29 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     ),
                     elevation: loginState.isLoading ? 0 : 2,
                   ),
-                  onPressed: loginState.isLoading ? null : _handleLogin,
+                  onPressed: loginState.isLoading ? null : _handleSsoLogin,
                   child: loginState.isLoading
                       ? SizedBox(
-                          height: 20,
-                          width: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2.5,
-                            valueColor: AlwaysStoppedAnimation<Color>(
-                              Colors.white.withOpacity(0.7),
-                            ),
-                          ),
-                        )
+                    height: 20,
+                    width: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.5,
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                        Colors.white.withOpacity(0.7),
+                      ),
+                    ),
+                  )
                       : const Text(
-                          "Login",
-                          style: TextStyle(
-                            fontSize: 16.0,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                ),
-              ),
-
-              SizedBox(height: size.height * 0.08),
-
-              // Terms and privacy
-              RichText(
-                textAlign: TextAlign.center,
-                text: TextSpan(
-                  text: 'By signing up, you agree to our ',
-                  style: TextStyle(
-                    color: Colors.grey.shade600,
-                    fontSize: 12,
+                    "Sign in with SSO",
+                    style: TextStyle(
+                      fontSize: 16.0,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
-                  children: [
-                    TextSpan(
-                      text: 'Terms of service',
-                      style: const TextStyle(
-                        color: Colors.black,
-                        fontWeight: FontWeight.w600,
-                        decoration: TextDecoration.underline,
-                      ),
-                    ),
-                    TextSpan(
-                      text: ' and ',
-                      style: TextStyle(color: Colors.grey.shade600),
-                    ),
-                    TextSpan(
-                      text: 'Privacy policy',
-                      style: const TextStyle(
-                        color: Colors.black,
-                        fontWeight: FontWeight.w600,
-                        decoration: TextDecoration.underline,
-                      ),
-                    ),
-                  ],
                 ),
               ),
+
+              SizedBox(height: size.height * 0.06),
             ],
           ),
         ),

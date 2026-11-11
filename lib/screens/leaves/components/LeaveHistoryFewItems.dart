@@ -1,48 +1,89 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import 'package:shop/route/screen_export.dart';
+// apply_leave_screen.dart (re-exported here) declares its own DayPortion,
+// which clashes with the one in LeaveDateSelector.dart, so hide it.
+import 'package:shop/route/screen_export.dart' hide DayPortion;
+import 'package:shop/screens/leaves/components/LeaveDateSelector.dart'; // LeaveDateItem, DayPortion
+import 'package:shop/services/api_config.dart';
 
 /// =========================
 /// ENUM
 /// =========================
-enum LeaveStatus { approved, pending, rejected }
+enum LeaveStatus { draft, approved, pending, rejected }
 
 /// =========================
 /// MODEL
 /// =========================
 class LeaveRecord {
   final int id;
+  final int leaveTypeId;
   final String type;
+  final String reason;
   final DateTime startDate;
   final DateTime endDate;
   final LeaveStatus status;
+  final List<Map<String, dynamic>> rawDates;
+  final List<String> attachmentNames;
 
   LeaveRecord({
     required this.id,
+    required this.leaveTypeId,
     required this.type,
+    required this.reason,
     required this.startDate,
     required this.endDate,
     required this.status,
+    required this.rawDates,
+    required this.attachmentNames,
   });
+
+  bool get isDraft => status == LeaveStatus.draft;
+
+  /// Converts the API dates into the selector's items (used by the edit screen).
+  List<LeaveDateItem> toDateItems() => rawDates.map((d) {
+    final portion = switch (d['type']) {
+      'AM_HALF' => DayPortion.am,
+      'PM_HALF' => DayPortion.pm,
+      _ => DayPortion.whole,
+    };
+    return LeaveDateItem(
+      date: DateTime.parse(d['date'] as String),
+      portion: portion,
+    );
+  }).toList();
 
   factory LeaveRecord.fromJson(Map<String, dynamic> json) {
     try {
-      final List dates = jsonDecode(json['leave_dates']);
-      final parsedDates = dates
-          .map((e) => DateTime.parse(e['date']))
+      final rawLeaveDates = json['leave_dates'];
+      final List dates = rawLeaveDates is String
+          ? jsonDecode(rawLeaveDates)
+          : (rawLeaveDates as List);
+
+      final rawDates =
+      dates.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+
+      final parsedDates = rawDates
+          .map((e) => DateTime.parse(e['date'] as String))
           .toList()
         ..sort();
 
-      final start = parsedDates.first;
-      final end = parsedDates.last;
-
       return LeaveRecord(
         id: json['id'] as int,
+        leaveTypeId: int.tryParse(
+            (json['leave_type_id'] ?? json['leave_type']?['id'])
+                ?.toString() ??
+                '') ??
+            0,
         type: json['leave_type']?['name'] ?? 'Leave',
-        startDate: start,
-        endDate: end,
+        reason: json['reason'] ?? '',
+        startDate: parsedDates.first,
+        endDate: parsedDates.last,
         status: _mapStatus(json['status']),
+        rawDates: rawDates,
+        attachmentNames: (json['attachments'] as List? ?? [])
+            .map((a) => (a['path'] ?? '').toString().split('/').last)
+            .toList(),
       );
     } catch (e) {
       print('LeaveRecord parsing error: $e');
@@ -51,9 +92,11 @@ class LeaveRecord {
     }
   }
 
-  static LeaveStatus _mapStatus(String status) {
-    if (status == 'approved') return LeaveStatus.approved;
-    if (status == 'rejected') return LeaveStatus.rejected;
+  static LeaveStatus _mapStatus(String? status) {
+    final s = (status ?? '').trim().toLowerCase();
+    if (s == 'on_draft' || s == 'draft') return LeaveStatus.draft;
+    if (s == 'approved') return LeaveStatus.approved;
+    if (s == 'rejected' || s == 'disapproved') return LeaveStatus.rejected;
     return LeaveStatus.pending;
   }
 }
@@ -64,7 +107,7 @@ class LeaveRecord {
 class LeaveService {
   static Future<List<LeaveRecord>> fetchLeaves(int staffId) async {
     final url = Uri.parse(
-        'http://172.31.16.69/api/v1/leave-requests/staff-id/$staffId?limit=3');
+        '${ApiConfig.leaveBase}/leave-requests/staff-id/$staffId?limit=3');
 
     final response = await http.get(url);
 
@@ -99,6 +142,9 @@ class _LeaveHistoryComponentState extends State<LeaveHistoryComponent> {
     _leaveFuture = LeaveService.fetchLeaves(widget.staffId);
   }
 
+  void _reload() =>
+      setState(() => _leaveFuture = LeaveService.fetchLeaves(widget.staffId));
+
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<List<LeaveRecord>>(
@@ -118,7 +164,11 @@ class _LeaveHistoryComponentState extends State<LeaveHistoryComponent> {
           return const Center(child: Text('No leave records'));
         }
 
-        return LeaveHistoryWidget(leaveRecords: records);
+        return LeaveHistoryWidget(
+          leaveRecords: records,
+          staffId: widget.staffId,
+          onChanged: _reload,
+        );
       },
     );
   }
@@ -129,8 +179,15 @@ class _LeaveHistoryComponentState extends State<LeaveHistoryComponent> {
 /// =========================
 class LeaveHistoryWidget extends StatelessWidget {
   final List<LeaveRecord> leaveRecords;
+  final int staffId;
+  final VoidCallback? onChanged;
 
-  const LeaveHistoryWidget({super.key, required this.leaveRecords});
+  const LeaveHistoryWidget({
+    super.key,
+    required this.leaveRecords,
+    required this.staffId,
+    this.onChanged,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -138,10 +195,12 @@ class LeaveHistoryWidget extends StatelessWidget {
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       itemCount: leaveRecords.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 12),
-      itemBuilder: (context, index) {
-        return LeaveHistoryCard(record: leaveRecords[index]);
-      },
+      separatorBuilder: (_, __) => const SizedBox(height: 14),
+      itemBuilder: (context, index) => LeaveHistoryCard(
+        record: leaveRecords[index],
+        staffId: staffId,
+        onChanged: onChanged,
+      ),
     );
   }
 }
@@ -151,22 +210,20 @@ class LeaveHistoryWidget extends StatelessWidget {
 /// =========================
 class LeaveHistoryCard extends StatelessWidget {
   final LeaveRecord record;
+  final int staffId;
+  final VoidCallback? onChanged;
 
-  const LeaveHistoryCard({super.key, required this.record});
-
-  Color getStatusColor(LeaveStatus status) {
-    switch (status) {
-      case LeaveStatus.approved:
-        return Colors.green;
-      case LeaveStatus.pending:
-        return Colors.orange;
-      case LeaveStatus.rejected:
-        return Colors.red;
-    }
-  }
+  const LeaveHistoryCard({
+    super.key,
+    required this.record,
+    required this.staffId,
+    this.onChanged,
+  });
 
   String getStatusText(LeaveStatus status) {
     switch (status) {
+      case LeaveStatus.draft:
+        return 'Draft';
       case LeaveStatus.approved:
         return 'Approved';
       case LeaveStatus.pending:
@@ -197,75 +254,105 @@ class LeaveHistoryCard extends StatelessWidget {
     return months[month - 1];
   }
 
+  Future<void> _handleTap(BuildContext context) async {
+    if (record.isDraft) {
+      // Drafts open the edit screen.
+      final updated = await Navigator.pushNamed<bool>(
+        context,
+        editLeaveScreenRoute,
+        arguments: {
+          'leaveId': record.id,
+          'staffId': staffId,
+          'leaveTypeId': record.leaveTypeId.toString(),
+          'initialReason': record.reason,
+          'initialDates': record.toDateItems(),
+          'existingAttachmentNames': record.attachmentNames,
+        },
+      );
+
+      if (updated == true) onChanged?.call(); // refresh the list
+    } else {
+      Navigator.pushNamed(
+        context,
+        leaveActionScreenRoute,
+        arguments: record.id.toString(),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final statusColor = getStatusColor(record.status);
     final statusText = getStatusText(record.status);
     final dateRange = formatDateRange(record.startDate, record.endDate);
 
-    return InkWell(
-      onTap: () {
-        Navigator.pushNamed(
-          context,
-          leaveActionScreenRoute,
-          arguments: record.id.toString(),
-        );
-      },
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            /// HEADER
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        record.type,
-                        style: Theme.of(context)
-                            .textTheme
-                            .titleMedium
-                            ?.copyWith(fontWeight: FontWeight.w500),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        dateRange,
-                        style: Theme.of(context)
-                            .textTheme
-                            .bodySmall
-                            ?.copyWith(color: Colors.grey[600]),
-                      ),
-                    ],
-                  ),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 12, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: statusColor.withOpacity(0.15),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    statusText,
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
-                      color: statusColor,
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(20),
+      child: InkWell(
+        onTap: () => _handleTap(context),
+        borderRadius: BorderRadius.circular(20),
+        splashColor: Colors.grey.withOpacity(0.06),
+        highlightColor: Colors.grey.withOpacity(0.03),
+        child: Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20),
+          ),
+          padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 18),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              /// Main content
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            record.type,
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF1A1A1A),
+                              letterSpacing: -0.2,
+                            ),
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: Colors.grey[200],
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Text(
+                            statusText,
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w500,
+                              color: Colors.grey[600],
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
+                    const SizedBox(height: 6),
+                    Text(
+                      dateRange,
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w400,
+                        color: Colors.grey[500],
+                      ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
-          ],
+              ),
+            ],
+          ),
         ),
       ),
     );

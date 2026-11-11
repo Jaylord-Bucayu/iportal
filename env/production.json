@@ -1,0 +1,4 @@
+{
+  "ENV": "production",
+  "IAM_BASE": "https://172.31.16.83/backend"
+}

@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:shop/components/ask_ai_button.dart';
@@ -16,6 +18,22 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 
 import '../../../entry_point.dart';
+import '../../home/views/components/network_problem_view.dart';
+
+/// Returns true if [error] looks like a connectivity / network-reachability
+/// failure (no internet, DNS failure, connection refused, etc) rather than
+/// an application-level error (bad JSON, 4xx/5xx handled elsewhere, etc).
+bool isNetworkError(Object error) {
+  if (error is SocketException) return true;
+  final msg = error.toString().toLowerCase();
+  return msg.contains('failed to fetch') ||
+      msg.contains('socketexception') ||
+      msg.contains('connection failed') ||
+      msg.contains('connection refused') ||
+      msg.contains('network is unreachable') ||
+      msg.contains('clientexception') ||
+      msg.contains('handshake');
+}
 
 class EventItem {
   final String id;
@@ -46,7 +64,6 @@ class LeavesScreen extends ConsumerStatefulWidget {
   @override
   ConsumerState<LeavesScreen> createState() => _LeavesScreenState();
 }
-
 
 class _TypingIndicator extends StatefulWidget {
   @override
@@ -125,7 +142,7 @@ class _BubbleTailPainter extends CustomPainter {
       ..style = PaintingStyle.fill;
 
     final path = Path()
-      ..moveTo(0, 0)        // tip pointing left toward avatar
+      ..moveTo(0, 0) // tip pointing left toward avatar
       ..lineTo(size.width, 0)
       ..lineTo(size.width, size.height)
       ..close();
@@ -140,6 +157,7 @@ class _BubbleTailPainter extends CustomPainter {
 class _LeavesScreenState extends ConsumerState<LeavesScreen> {
   LeaveBalance? leaveBalance;
   bool loading = true;
+  bool hasNetworkError = false; // NEW: tracks connectivity failures
   List<Map<String, dynamic>> pendingLeaves = [];
 
   // AI Coach state
@@ -166,29 +184,48 @@ class _LeavesScreenState extends ConsumerState<LeavesScreen> {
       setState(() {
         leaveBalance = result;
         loading = false;
+        hasNetworkError = false;
       });
     } catch (e) {
       print("Error fetching leave balance: $e");
       if (!mounted) return;
-      setState(() => loading = false);
+      setState(() {
+        loading = false;
+        if (isNetworkError(e)) hasNetworkError = true;
+      });
     }
   }
 
   Future<void> _loadLeaves(int staffId) async {
     try {
       final data = await LeavesApi.fetchPendingLeaves(staffId: staffId);
+      if (!mounted) return;
       setState(() {
         pendingLeaves = data;
         loading = false;
+        hasNetworkError = false;
       });
     } catch (e) {
+      print("Error fetching pending leaves: $e");
+      if (!mounted) return;
       setState(() {
         pendingLeaves = [];
         loading = false;
+        if (isNetworkError(e)) hasNetworkError = true;
       });
     }
   }
 
+  Future<void> _retry() async {
+    final authUser = ref.read(authProvider);
+    final staffId = authUser?.staffId ?? 0;
+    setState(() {
+      loading = true;
+      hasNetworkError = false;
+    });
+    await fetchLeaveBalance(staffId);
+    await _loadLeaves(staffId);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -199,24 +236,16 @@ class _LeavesScreenState extends ConsumerState<LeavesScreen> {
     final double aiButtonBottom = pendingLeaves.isEmpty ? 20 : 90;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF0F2F5),
+      backgroundColor:
+      const Color(0xFFF1F7FC), // Updated background color to #F1F7FC
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: const Color(0xFFF1F7FC),
         elevation: 0,
         centerTitle: false,
         automaticallyImplyLeading: false,
-        title: const Text(
-          'Leave Applications',
-          style: TextStyle(
-            fontSize: 17,
-            fontWeight: FontWeight.w800,
-            color: C.textHi,
-            letterSpacing: -0.4,
-          ),
-        ),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new,
-              color: Colors.black, size: 20.0),
+              color: Colors.black, size: 16.0),
           onPressed: () {
             Navigator.of(context).pushAndRemoveUntil(
               MaterialPageRoute(
@@ -228,56 +257,73 @@ class _LeavesScreenState extends ConsumerState<LeavesScreen> {
         ),
         actions: [
           Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: GestureDetector(
-              onTap: () {
-                Navigator.pushNamed(context, applyLeaveScreenRoute,
-                    arguments: staffId);
-              },
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFE7F0FF),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: const Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.add_circle_outline, size: 14, color: Color(0xFF0866FF)),
-                    SizedBox(width: 4),
-                    Text(
-                      'Apply',
-                      style: TextStyle(color: Color(0xFF0866FF), fontSize: 12,fontWeight: FontWeight.w600),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          Padding(
             padding: const EdgeInsets.only(right: 12),
-            child: GestureDetector(
-              onTap: () {
-                Navigator.pushNamed(context, viewLeaveLedgerScreenRoute,
-                    arguments: staffId);
-              },
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: Colors.black,
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: const Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.assignment_outlined, size: 14, color: Colors.white),
-                  ],
-                ),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.08),
+                    blurRadius: 10,
+                    offset: const Offset(0, 3),
+                  ),
+                ],
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  GestureDetector(
+                    onTap: () {
+                      Navigator.pushNamed(context, applyLeaveScreenRoute,
+                          arguments: staffId);
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 6),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.add_circle_outline,
+                              size: 16, color: Color(0xFF0866FF)),
+                          SizedBox(width: 4),
+                          Text(
+                            'Apply',
+                            style: TextStyle(
+                                color: Color(0xFF0866FF),
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  Container(
+                    height: 20,
+                    width: 1,
+                    color: Colors.grey[300],
+                  ),
+                  GestureDetector(
+                    onTap: () {
+                      Navigator.pushNamed(context, viewLeaveLedgerScreenRoute,
+                          arguments: staffId);
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                      child: const Icon(Icons.assignment_outlined,
+                          size: 16, color: Colors.black87),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
-        ],),
-      body: Stack(
+        ],
+      ),
+      body: hasNetworkError
+          ? NetworkProblemView(onRetry: _retry) // NEW: network error state
+          : Stack(
         children: [
           RefreshIndicator(
             onRefresh: () async {
@@ -303,53 +349,38 @@ class _LeavesScreenState extends ConsumerState<LeavesScreen> {
                   //   ),
                   // ),
                   SizedBox(height: 12),
-                  // Upcoming Leaves (SUPERVISOR)
-                  if (roles.contains('supervisor') && roles.contains('approver') && staffId != null)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: UpcomingLeaves(
-                        status: 'supervisor', // or whichever takes priority
-                        authorityId: staffId!,
-                      ),
-                    )
-                  else if (roles.contains('supervisor') && staffId != null)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: UpcomingLeaves(
-                        status: 'supervisor',
-                        authorityId: staffId!,
-                      ),
-                    )
-                  else if (roles.contains('approver') && staffId != null)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        child: UpcomingLeaves(
-                          status: 'approver',
-                          authorityId: staffId!,
-                        ),
-                      ),
-
-
-                  const SizedBox(height: 8),
 
                   // Leave Balance Header
                   const Padding(
                     padding: EdgeInsets.symmetric(horizontal: 16),
                     child: Text(
-                      'Leave Balances',
+                      'Your Leave Overview',
                       style: TextStyle(
-                          fontSize: 13,
-                          color: Colors.black,
+                          fontSize: 20,
+                          color: Colors.black87,
                           fontWeight: FontWeight.w800),
                     ),
                   ),
+                  const SizedBox(height: 4),
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 16),
+                    child: Text(
+                      'Track your available leave balances across different categories',
+                      style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.black54,
+                          fontWeight: FontWeight.w400),
+                    ),
+                  ),
+
                   const SizedBox(height: 10),
 
                   // Leave Balance Cards
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     child: loading
-                        ? const Center(child: CircularProgressIndicator())
+                        ? const Center(
+                        child: CircularProgressIndicator())
                         : leaveBalance == null
                         ? const Center(
                       child: Text(
@@ -362,39 +393,48 @@ class _LeavesScreenState extends ConsumerState<LeavesScreen> {
                       runSpacing: 8,
                       children: [
                         SizedBox(
-                          width: (MediaQuery.of(context).size.width -
+                          width: (MediaQuery.of(context)
+                              .size
+                              .width -
                               16 * 2 -
                               8) /
                               2,
                           child: leaveCard(
                             'Sick',
-                            leaveBalance?.sickLeave.toString() ??
+                            leaveBalance?.sickLeave
+                                .toString() ??
                                 '0.0',
                             'assets/images/face-with-thermometer.png',
                             Colors.black,
                           ),
                         ),
                         SizedBox(
-                          width: (MediaQuery.of(context).size.width -
+                          width: (MediaQuery.of(context)
+                              .size
+                              .width -
                               16 * 2 -
                               8) /
                               2,
                           child: leaveCard(
                             'Vacation',
-                            leaveBalance?.vacationLeave.toString() ??
+                            leaveBalance?.vacationLeave
+                                .toString() ??
                                 '0.0',
                             'assets/images/tent.png',
                             Colors.black,
                           ),
                         ),
                         SizedBox(
-                          width: (MediaQuery.of(context).size.width -
+                          width: (MediaQuery.of(context)
+                              .size
+                              .width -
                               16 * 2 -
                               8) /
                               2,
                           child: leaveCard(
                             'SPL',
-                            leaveBalance?.specialPrivilegeLeave
+                            leaveBalance
+                                ?.specialPrivilegeLeave
                                 .toString() ??
                                 '0.0',
                             'assets/images/spl.png',
@@ -402,13 +442,16 @@ class _LeavesScreenState extends ConsumerState<LeavesScreen> {
                           ),
                         ),
                         SizedBox(
-                          width: (MediaQuery.of(context).size.width -
+                          width: (MediaQuery.of(context)
+                              .size
+                              .width -
                               16 * 2 -
                               8) /
                               2,
                           child: leaveCard(
                             'Force',
-                            leaveBalance?.forceLeave.toString() ??
+                            leaveBalance?.forceLeave
+                                .toString() ??
                                 '0.0',
                             'assets/images/force.png',
                             Colors.black,
@@ -418,8 +461,37 @@ class _LeavesScreenState extends ConsumerState<LeavesScreen> {
                     ),
                   ),
 
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 16),
+                  // Upcoming Leaves (SUPERVISOR)
+                  if (hasRole(roles, 'supervisor') &&
+                      hasRole(roles, 'approver') &&
+                      staffId != null)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: UpcomingLeaves(
+                        status: 'supervisor',
+                        authorityId: staffId!,
+                      ),
+                    )
+                  else if (hasRole(roles, 'supervisor') &&
+                      staffId != null)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: UpcomingLeaves(
+                        status: 'supervisor',
+                        authorityId: staffId!,
+                      ),
+                    )
+                  else if (hasRole(roles, 'approver') && staffId != null)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: UpcomingLeaves(
+                          status: 'approver',
+                          authorityId: staffId!,
+                        ),
+                      ),
 
+                  const SizedBox(height: 8),
                   // Recent Transactions
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -428,7 +500,8 @@ class _LeavesScreenState extends ConsumerState<LeavesScreen> {
                         padding: const EdgeInsets.symmetric(
                             horizontal: 16, vertical: 8),
                         child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          mainAxisAlignment:
+                          MainAxisAlignment.spaceBetween,
                           children: [
                             const Text(
                               'Recent Transactions',
@@ -440,7 +513,8 @@ class _LeavesScreenState extends ConsumerState<LeavesScreen> {
                             TextButton(
                               onPressed: () {
                                 Navigator.pushNamed(
-                                    context, 'view_all_leaves', arguments: staffId);
+                                    context, 'view_all_leaves',
+                                    arguments: staffId);
                               },
                               child: Text(
                                 'See All',
@@ -454,7 +528,8 @@ class _LeavesScreenState extends ConsumerState<LeavesScreen> {
                         ),
                       ),
                       Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        padding:
+                        const EdgeInsets.symmetric(horizontal: 16),
                         child: LeaveHistoryComponent(staffId: staffId),
                       ),
                     ],
@@ -463,7 +538,6 @@ class _LeavesScreenState extends ConsumerState<LeavesScreen> {
                 ],
               ),
             ),
-
           ),
 
           // Floating AI button
@@ -485,7 +559,6 @@ class _LeavesScreenState extends ConsumerState<LeavesScreen> {
           //   ),
         ],
       ),
-
     );
   }
 
@@ -608,15 +681,23 @@ class _LeavesScreenState extends ConsumerState<LeavesScreen> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(
-                    title,
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w500,
-                      color: color,
+                  Container(
+                    padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE7F0FF),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      title,
+                      style: const TextStyle(
+                        color: Color(0xFF0866FF),
+                        fontSize: 10,
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
                   ),
-                  const SizedBox(height: 2),
+                  const SizedBox(height: 1),
                   Text(
                     balance,
                     style: TextStyle(

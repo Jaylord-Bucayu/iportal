@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Authentication complete</title>
+</head>
+<body>
+<p>Signing you in… you can close this window.</p>
+<script>
+    // Hands the callback URL (with ?code=&state=) back to the Flutter web app.
+    (function () {
+      var url = window.location.href;
+      var origin = window.location.origin;
+
+      // 1) Normal case: the popup still has a link to the app window.
+      if (window.opener) {
+        try {
+          window.opener.postMessage({ 'flutter-web-auth-2': url }, origin);
+        } catch (e) {}
+      }
+
+      // 2) Fallback for when the IAM's Cross-Origin-Opener-Policy cut the link
+      //    (window.opener is null). Same origin as the app, so localStorage and
+      //    BroadcastChannel are shared with it.
+      try {
+        localStorage.setItem('flutter-web-auth-2', url);
+      } catch (e) {}
+      try {
+        var bc = new BroadcastChannel('flutter-web-auth-2');
+        bc.postMessage(url);
+        bc.close();
+      } catch (e) {}
+
+      window.close();
+    })();
+</script>
+</body>
+</html>

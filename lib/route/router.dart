@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shop/entry_point.dart';
+import 'package:shop/models/news.dart';
 import 'package:shop/screens/directory/views/directory_screen.dart';
 import 'package:shop/screens/leaves/views/approval_leave_confirmation_screen.dart';
 import 'package:shop/screens/leaves/views/approval_leave_screen.dart';
@@ -9,11 +10,16 @@ import 'package:shop/screens/leaves/views/leave_details_screen.dart' as details;
 import 'package:shop/screens/leaves/views/leave_type_details_screen.dart';
 import 'package:shop/screens/leaves/views/view_all_leaves_ledger.dart';
 import 'package:shop/screens/leaves/views/view_all_leaves_screen.dart';
+import 'package:shop/screens/news/news_details_screen.dart';
+import 'package:shop/screens/news/news_lists_screen.dart';
 import 'package:shop/screens/pass-slip/views/apply_pass_slip_screen.dart';
 import 'package:shop/screens/pass-slip/views/qr_code_approval_info_screen.dart';
 import 'package:shop/screens/payslip/views/payslip_breakdown_screen.dart';
 import 'package:shop/screens/pass-slip/views/pass_slip_screen.dart';
 
+import '../screens/home/views/network_error_screen.dart';
+import '../screens/leaves/components/LeaveDateSelector.dart';
+import '../screens/leaves/views/edit_leave_screen.dart';
 import 'screen_export.dart';
 
 // Yuo will get 50+ screens and more once you have the full template
@@ -96,6 +102,11 @@ Route<dynamic> generateRoute(RouteSettings settings) {
     case pinScreenRoute:
       return MaterialPageRoute(
         builder: (context) => const PinScreen(),
+      );
+
+    case networkErrorScreenRoute:
+      return MaterialPageRoute(
+        builder: (context) => const NetworkProblemScreen(),
       );
     // case profileSetupScreenRoute:
     //   return MaterialPageRoute(
@@ -465,6 +476,38 @@ case leaveActionScreenRoute:
         transitionDuration: const Duration(milliseconds: 400), // adjust speed
       );
 
+    case editLeaveScreenRoute:
+      {
+        final args = settings.arguments as Map<String, dynamic>;
+
+        return PageRouteBuilder<bool>(
+          settings: settings,
+          pageBuilder: (context, animation, secondaryAnimation) => EditLeaveScreen(
+            leaveId: args['leaveId'] as int,
+            staffId: args['staffId'] as int,
+            leaveTypeId: args['leaveTypeId'] as String,
+            initialReason: args['initialReason'] as String,
+            initialDates: args['initialDates'] as List<LeaveDateItem>,
+            existingAttachmentNames:
+            (args['existingAttachmentNames'] as List<String>?) ?? const [],
+          ),
+          transitionsBuilder: (context, animation, secondaryAnimation, child) {
+            // Slide from right transition
+            const begin = Offset(1.0, 0.0);
+            const end = Offset.zero;
+            const curve = Curves.ease;
+
+            final tween =
+            Tween(begin: begin, end: end).chain(CurveTween(curve: curve));
+
+            return SlideTransition(
+              position: animation.drive(tween),
+              child: child,
+            );
+          },
+          transitionDuration: const Duration(milliseconds: 400),
+        );
+      }
     case passSlipScreenRoute:
       return MaterialPageRoute(
         builder: (context) => const PassSlipScreen(),
@@ -543,6 +586,19 @@ case leaveActionScreenRoute:
         }
       }
 
+
+    case newsWpScreenRoute:
+      final args = settings.arguments as NewsPost;
+      return MaterialPageRoute(
+        builder: (context) => NewsDetailScreen(post: args),
+      );
+
+    case newsWpAllScreenRoute:
+      return MaterialPageRoute(
+        builder: (context) => const NewsListScreen(),
+      );
+
+
     case notificationsScreenRoute:
       return MaterialPageRoute(
         builder: (context) => const NotificationsScreen(),
@@ -562,4 +618,8 @@ case leaveActionScreenRoute:
         builder: (context) => const PayslipScreen(),
       );
   }
+
+
 }
+
+

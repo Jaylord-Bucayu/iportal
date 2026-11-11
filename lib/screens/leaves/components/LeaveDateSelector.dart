@@ -45,18 +45,25 @@ class _LeaveDateSelectorState extends State<LeaveDateSelector> {
     }
   }
 
+  bool _isWeekend(DateTime date) =>
+      date.weekday == DateTime.saturday || date.weekday == DateTime.sunday;
+
   bool _isDateEnabled(DateTime date) {
+    if (_isWeekend(date)) return false;
+
     final today = DateTime.now();
     final fiveDaysLater = today.add(const Duration(days: 5));
 
     if (widget.leaveTypeName == null) return false;
-    if (widget.leaveTypeName == 'Vacation Leave') {
+    if (widget.leaveTypeName == 'Vacation Leave' ||
+        widget.leaveTypeName == 'SPL') {
       return !date.isBefore(fiveDaysLater);
     }
     return true;
   }
 
   void _toggleDate(DateTime date) {
+    if (_isWeekend(date)) return;
     if (!_isDateEnabled(date)) return;
 
     final existing = _findItem(date);
@@ -87,11 +94,12 @@ class _LeaveDateSelectorState extends State<LeaveDateSelector> {
 
     final result = await showDialog<DayPortion>(
       context: context,
+      barrierDismissible: false,
       builder: (context) {
         return AlertDialog(
           contentPadding: const EdgeInsets.all(14),
           shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           content: SizedBox(
             height: 200,
             child: Column(
@@ -107,7 +115,7 @@ class _LeaveDateSelectorState extends State<LeaveDateSelector> {
                 Expanded(
                   child: CupertinoPicker(
                     scrollController:
-                        FixedExtentScrollController(initialItem: selectedIndex),
+                    FixedExtentScrollController(initialItem: selectedIndex),
                     itemExtent: 40,
                     onSelectedItemChanged: (index) {
                       selectedIndex = index;
@@ -136,8 +144,8 @@ class _LeaveDateSelectorState extends State<LeaveDateSelector> {
                       },
                       child: const Text('Select',
                           style: TextStyle(color: Colors.white)),
+                    ),
                   ),
-                ),
                 )
               ],
             ),
@@ -157,25 +165,46 @@ class _LeaveDateSelectorState extends State<LeaveDateSelector> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        /// Calendar
         Card(
-          color: Colors.grey.shade100,     
+          color: Colors.grey.shade100,
           elevation: 0,
           child: TableCalendar(
-            calendarStyle :CalendarStyle(
+            calendarStyle: CalendarStyle(
+              // Enabled weekdays — bold black
+              defaultTextStyle: const TextStyle(
+                color: Colors.black,
+                fontWeight: FontWeight.w600,
+              ),
+              // Today circle
               todayDecoration: BoxDecoration(
                 color: Colors.grey.shade300,
                 shape: BoxShape.circle,
               ),
+              todayTextStyle: const TextStyle(
+                color: Colors.black,
+                fontWeight: FontWeight.w600,
+              ),
+              // Selected day
               selectedDecoration: const BoxDecoration(
                 color: Colors.black,
                 shape: BoxShape.circle,
               ),
+              selectedTextStyle: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w600,
+              ),
+              // Disabled days (weekends + past/restricted dates) — grey
               disabledTextStyle: TextStyle(
                 color: Colors.grey.shade400,
+                fontWeight: FontWeight.normal,
+              ),
+              // Weekends explicitly greyed out
+              weekendTextStyle: TextStyle(
+                color: Colors.grey.shade400,
+                fontWeight: FontWeight.normal,
               ),
             ),
-            headerStyle : const HeaderStyle(
+            headerStyle: const HeaderStyle(
               titleTextStyle: TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.bold,
@@ -191,9 +220,7 @@ class _LeaveDateSelectorState extends State<LeaveDateSelector> {
             selectedDayPredicate: (day) => _findItem(day) != null,
             enabledDayPredicate: _isDateEnabled,
             onDaySelected: (selectedDay, focusedDay) {
-              setState(() {
-                _focusedDay = focusedDay;
-              });
+              setState(() => _focusedDay = focusedDay);
               _toggleDate(selectedDay);
             },
           ),
@@ -201,7 +228,6 @@ class _LeaveDateSelectorState extends State<LeaveDateSelector> {
 
         const SizedBox(height: 12),
 
-        /// Selected Dates List with swipe-to-delete
         if (widget.selectedDates.isNotEmpty)
           Column(
             children: widget.selectedDates.map((d) {
@@ -223,7 +249,6 @@ class _LeaveDateSelectorState extends State<LeaveDateSelector> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          /// Weekday + Full date
                           Text(
                             "${_formatWeekday(d.date)}, ${_formatFullDate(d.date)}",
                             style: const TextStyle(
@@ -231,8 +256,7 @@ class _LeaveDateSelectorState extends State<LeaveDateSelector> {
                                 fontWeight: FontWeight.w500,
                                 color: Colors.black87),
                           ),
-                            const SizedBox(height: 4),
-                          /// Portion picker
+                          const SizedBox(height: 4),
                           Row(
                             mainAxisAlignment: MainAxisAlignment.start,
                             children: [
@@ -260,10 +284,8 @@ class _LeaveDateSelectorState extends State<LeaveDateSelector> {
                       ),
                     ),
                   ),
-
-                  /// Full-width divider except last item
                   if (index != widget.selectedDates.length - 1)
-                     Divider(
+                    Divider(
                       color: Colors.grey.shade300,
                       height: 1,
                       thickness: 1,
@@ -272,11 +294,11 @@ class _LeaveDateSelectorState extends State<LeaveDateSelector> {
               );
             }).toList(),
           ),
-           Divider(
-                      color: Colors.grey.shade300,
-                      height: 1,
-                      thickness: 1,
-                    )
+        Divider(
+          color: Colors.grey.shade300,
+          height: 1,
+          thickness: 1,
+        ),
       ],
     );
   }

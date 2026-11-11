@@ -2,8 +2,10 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shop/models/leave_type_model.dart';
 
+import '../api_config.dart';
+
 class LeavesApi {
-  static const String baseUrl = "http://172.31.16.69/api/v1"; // ← change this
+  static String get baseUrl => ApiConfig.leaveBase;
 
   /// Fetch upcoming leaves
   static Future<List<EventItem>> getUpcomingLeaves() async {
@@ -26,7 +28,7 @@ class LeavesApi {
   /// 🔥 Fetch leave balance (e.g. /api/v1/leave-balances/215463)
   static Future<LeaveBalance> getLeaveBalance(int employeeId) async {
     final url = Uri.parse("$baseUrl/leave-balances/$employeeId");
-
+  print(url);
     try {
       final response = await http.get(url, headers: {
         "Accept": "application/json",

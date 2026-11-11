@@ -4,9 +4,14 @@ import 'package:http/http.dart' as http;
 import 'package:shop/components/modal/success_modal.dart';
 import 'package:shop/constants.dart';
 import 'package:shop/route/route_constants.dart';
-import 'package:shop/screens/leaves/components/LeaveDateSelector.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:shop/screens/leaves/components/LeaveDates.dart';
+import 'package:shop/screens/leaves/views/leave_date_selector_screen.dart';
+import 'package:shop/services/api_config.dart';
+
+import '../components/LeaveDateSelector.dart';
+
+
 
 enum DayPortion { whole, am, pm }
 
@@ -27,13 +32,12 @@ class LeaveType {
 }
 
 class ApplyLeaveScreen extends StatefulWidget {
-  
-  final int staffId; // 👈 ADD THIS
+  final int staffId;
 
   const ApplyLeaveScreen({
     super.key,
     required this.staffId,
-    });
+  });
 
   @override
   State<ApplyLeaveScreen> createState() => _ApplyLeaveScreenState();
@@ -53,10 +57,15 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen>
 
   List<PlatformFile> _pickedFiles = [];
   final int _maxFiles = 3;
+  // ── Max allowed size per uploaded file ──────────────────────
+  static const int _maxFileSizeBytes = 15 * 1024 * 1024; // 15 MB
 
   double _totalDays = 0;
   bool _showAttachment = false;
   PlatformFile? _pickedFile;
+
+  // ── Submission loading state ──────────────────────────────
+  bool _isSubmitting = false;
 
   final Set<String> _flippedCards = {};
 
@@ -72,7 +81,7 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen>
       id: '2',
       name: 'Sick Leave',
       imageAsset: 'assets/images/face-with-thermometer.png',
-      requirement: 'Attach medical certificate if more than 4 days.',
+      requirement: 'Attach medical certificate if 5 days and more.',
       balanceDays: 8,
     ),
     LeaveType(
@@ -86,45 +95,46 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen>
       id: '3',
       name: 'Special Privilege Leave',
       imageAsset: 'assets/images/spl.png',
-      requirement: 'Inform HR and supervisor immediately.',
+      requirement: '',
       balanceDays: 4,
-    )
+    ),
   ];
 
+  // Supporting documents are now REQUIRED for every leave type/application,
+  // not just Sick Leave with 5+ days. Kept as a getter so the requirement
+  // logic stays in one place and the UI/validation both read from it.
+  //bool get _attachmentRequired => _selectedLeaveType != null;
+  bool get _attachmentRequired => false;
   void _recomputeAttachmentRule() {
-    _showAttachment = _selectedLeaveType?.name.toLowerCase() == 'sick leave' &&
-        _selectedDates.length >= 5;
+    // Show the "Supporting Documents" uploader for any selected leave type,
+    // not just Sick Leave. It's also now mandatory (see _attachmentRequired).
+    _showAttachment = _selectedLeaveType != null;
   }
 
-  // ── Groq API call ──────────────────────────────────────────
-  // Future<String?> _fetchGroqSuggestion(String reason) async {
-  //   const endpoint = 'https://api.groq.com/openai/v1/chat/completions';
-  //   final response = await http.post(
-  //     Uri.parse(endpoint),
-  //     headers: {
-  //       'Content-Type': 'application/json',
-  //       'Authorization': 'Bearer $_groqApiKey',
-  //     },
-  //     body: jsonEncode({
-  //       'model': 'llama-3.3-70b-versatile',
-  //       'messages': [
-  //         {
-  //           'role': 'user',
-  //           'content':
-  //               'You are an HR assistant. Rewrite the following leave reason into a formal, polite, and concise single sentence. Return only the rewritten sentence, no explanation:\n\n$reason',
-  //         }
-  //       ],
-  //       'max_tokens': 100,
-  //       'temperature': 0.7,
-  //     }),
-  //   );
+  // ── Open Leave Date Selector Screen ───────────────────────
+  Future<void> _openLeaveDateScreen() async {
+    final result = await Navigator.push<List<LeaveDateItem>>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => LeaveDateSelectorScreen(
+          initialDates: _selectedDates,
+          leaveTypeName: _selectedLeaveType?.name,
+        ),
+      ),
+    );
 
-  //   if (response.statusCode == 200) {
-  //     final json = jsonDecode(response.body);
-  //     return json['choices'][0]['message']['content']?.toString().trim();
-  //   }
-  //   return null;
-  // }
+    if (result != null) {
+      setState(() {
+        _selectedDates = result;
+        _recomputeAttachmentRule();
+      });
+    }
+  }
+
+  String _formatBytes(int bytes) {
+    final mb = bytes / 1024 / 1024;
+    return '${mb.toStringAsFixed(2)} MB';
+  }
 
   Future<void> _pickFiles() async {
     try {
@@ -132,22 +142,45 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen>
         allowMultiple: true,
         type: FileType.custom,
         allowedExtensions: ['jpg', 'jpeg', 'png', 'pdf'],
-        dialogTitle: 'Select Medical Certificates (Hold to select multiple)',
+        dialogTitle: 'Select Supporting Documents (Hold to select multiple)',
       );
 
       if (result != null && result.files.isNotEmpty) {
+        // ── Validate file size (max 15MB per file) ──────────────
+        final oversizedFiles =
+        result.files.where((f) => f.size > _maxFileSizeBytes).toList();
+        final validFiles =
+        result.files.where((f) => f.size <= _maxFileSizeBytes).toList();
+
+        if (oversizedFiles.isNotEmpty) {
+          final names = oversizedFiles
+              .map((f) => '${f.name} (${_formatBytes(f.size)})')
+              .join(', ');
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                  'File(s) exceed the 15MB limit and were not added: $names'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+
+        if (validFiles.isEmpty) {
+          return;
+        }
+
         setState(() {
-          if (result.files.length > _maxFiles) {
+          if (validFiles.length > _maxFiles) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: Text(
-                    'Maximum $_maxFiles files allowed. Selected ${result.files.length}'),
+                    'Maximum $_maxFiles files allowed. Selected ${validFiles.length}'),
                 backgroundColor: Colors.red,
               ),
             );
-            _pickedFiles = result.files.sublist(0, _maxFiles);
+            _pickedFiles = validFiles.sublist(0, _maxFiles);
           } else {
-            _pickedFiles = result.files;
+            _pickedFiles = validFiles;
           }
         });
         debugPrint(
@@ -158,92 +191,7 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen>
     }
   }
 
-  void openLeaveDateBottomSheet(
-      BuildContext context, Function(List<LeaveDateItem>) onChanged) {
-    final double initialSize = _selectedDates.isNotEmpty ? 0.95 : 0.6;
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (_) {
-        return DraggableScrollableSheet(
-          expand: false,
-          initialChildSize: initialSize,
-          minChildSize: 0.6,
-          maxChildSize: 0.95,
-          builder: (_, controller) {
-            return Container(
-              decoration: const BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-              ),
-              child: SingleChildScrollView(
-                controller: controller,
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  children: [
-                    Container(
-                      width: 40,
-                      height: 4,
-                      margin: const EdgeInsets.only(bottom: 12),
-                      decoration: BoxDecoration(
-                        color: Colors.grey.shade400,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                    ),
-                    const Text(
-                      'Select Leave Dates',
-                      style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.black),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 6),
-                    const Text(
-                      'Please select the dates you wish to take leave for. You can select multiple dates if needed.',
-                      style: TextStyle(fontSize: 13, color: Colors.black54),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 16),
-                    LeaveDateSelector(
-                      selectedDates: _selectedDates,
-                      leaveTypeName: _selectedLeaveType?.name,
-                      onChanged: (dates) {
-                        setState(() {
-                          _selectedDates = dates;
-                        });
-                      },
-                    ),
-                    const SizedBox(height: 16),
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton(
-                        onPressed: () => Navigator.pop(context),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.black,
-                          elevation: 0,
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: const StadiumBorder(),
-                        ),
-                        child: const Text('Done'),
-                      ),
-                    )
-                  ],
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-
-  // ── Reason modal with Groq AI suggest ─────────────────────
+  // ── Reason modal ───────────────────────────────────────────
   void _showReasonModal() {
     final tempController = TextEditingController(text: _reasonController.text);
 
@@ -270,7 +218,6 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen>
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // Drag handle
                   Center(
                     child: Container(
                       width: 40,
@@ -306,10 +253,8 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen>
                                 color: Colors.black87,
                               ),
                             ),
-                           
                             const SizedBox(height: 12),
 
-                            // ── Text field + AI button row ──
                             Row(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
@@ -324,34 +269,30 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen>
                                       fillColor: _bgColor,
                                       border: OutlineInputBorder(
                                         borderRadius:
-                                            BorderRadius.circular(10),
+                                        BorderRadius.circular(10),
                                         borderSide: const BorderSide(
                                             color: _borderColor),
                                       ),
                                       enabledBorder: OutlineInputBorder(
                                         borderRadius:
-                                            BorderRadius.circular(10),
+                                        BorderRadius.circular(10),
                                         borderSide: const BorderSide(
                                             color: _borderColor),
                                       ),
                                       focusedBorder: OutlineInputBorder(
                                         borderRadius:
-                                            BorderRadius.circular(10),
+                                        BorderRadius.circular(10),
                                         borderSide: BorderSide(
                                             color: Colors.primaries[4]),
                                       ),
                                       contentPadding:
-                                          const EdgeInsets.all(12),
+                                      const EdgeInsets.all(12),
                                     ),
                                   ),
                                 ),
-                                const SizedBox(width: 8),
-
-                          
                               ],
                             ),
 
-                            // ── AI Suggestion bubble ──
                             if (aiSuggestion != null) ...[
                               const SizedBox(height: 12),
                               AnimatedContainer(
@@ -368,7 +309,6 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen>
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    // Label
                                     Row(
                                       children: [
                                         Icon(Icons.auto_awesome,
@@ -386,8 +326,6 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen>
                                       ],
                                     ),
                                     const SizedBox(height: 6),
-
-                                    // Suggested text
                                     Text(
                                       aiSuggestion!,
                                       style: const TextStyle(
@@ -397,32 +335,29 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen>
                                       ),
                                     ),
                                     const SizedBox(height: 10),
-
-                                    // ── Accept / Reject ──
                                     Row(
                                       children: [
-                                        // Accept
                                         Expanded(
                                           child: GestureDetector(
                                             onTap: () {
                                               setInnerState(() {
                                                 tempController.text =
-                                                    aiSuggestion!;
+                                                aiSuggestion!;
                                                 aiSuggestion = null;
                                               });
                                             },
                                             child: Container(
                                               padding:
-                                                  const EdgeInsets.symmetric(
-                                                      vertical: 9),
+                                              const EdgeInsets.symmetric(
+                                                  vertical: 9),
                                               decoration: BoxDecoration(
                                                 color: Colors.primaries[4],
                                                 borderRadius:
-                                                    BorderRadius.circular(8),
+                                                BorderRadius.circular(8),
                                               ),
                                               child: const Row(
                                                 mainAxisAlignment:
-                                                    MainAxisAlignment.center,
+                                                MainAxisAlignment.center,
                                                 children: [
                                                   Icon(Icons.check,
                                                       size: 15,
@@ -434,7 +369,7 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen>
                                                       fontSize: 13,
                                                       color: Colors.white,
                                                       fontWeight:
-                                                          FontWeight.w600,
+                                                      FontWeight.w600,
                                                     ),
                                                   ),
                                                 ],
@@ -443,28 +378,26 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen>
                                           ),
                                         ),
                                         const SizedBox(width: 8),
-
-                                        // Reject
                                         Expanded(
                                           child: GestureDetector(
                                             onTap: () {
                                               setInnerState(
-                                                  () => aiSuggestion = null);
+                                                      () => aiSuggestion = null);
                                             },
                                             child: Container(
                                               padding:
-                                                  const EdgeInsets.symmetric(
-                                                      vertical: 9),
+                                              const EdgeInsets.symmetric(
+                                                  vertical: 9),
                                               decoration: BoxDecoration(
                                                 color: _bgColor,
                                                 borderRadius:
-                                                    BorderRadius.circular(8),
+                                                BorderRadius.circular(8),
                                                 border: Border.all(
                                                     color: _borderColor),
                                               ),
                                               child: const Row(
                                                 mainAxisAlignment:
-                                                    MainAxisAlignment.center,
+                                                MainAxisAlignment.center,
                                                 children: [
                                                   Icon(Icons.close,
                                                       size: 15,
@@ -476,7 +409,7 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen>
                                                       fontSize: 13,
                                                       color: Colors.black54,
                                                       fontWeight:
-                                                          FontWeight.w600,
+                                                      FontWeight.w600,
                                                     ),
                                                   ),
                                                 ],
@@ -498,7 +431,6 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen>
 
                   const SizedBox(height: 16),
 
-                  // ── Confirm / Cancel ──
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
@@ -549,6 +481,59 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen>
     );
   }
 
+  // ── Blocking loading modal (no back button / no tap-outside dismiss) ──
+  void _showLoadingDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      barrierColor: Colors.black.withOpacity(0.4),
+      builder: (dialogContext) {
+        return PopScope(
+          canPop: false,
+          child: Center(
+            child: Container(
+              padding:
+              const EdgeInsets.symmetric(horizontal: 32, vertical: 28),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const SizedBox(
+                    width: 28,
+                    height: 28,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.5,
+                      color: Color(0xFF0866FF),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Submitting your leave request…',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.black87,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _hideLoadingDialog() {
+    if (Navigator.of(context, rootNavigator: true).canPop()) {
+      Navigator.of(context, rootNavigator: true).pop();
+    }
+  }
+
   Future<void> _submitApplication(int staffId) async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -559,17 +544,34 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen>
       return;
     }
 
-    if (_selectedLeaveType?.name.toLowerCase() == 'sick leave' &&
-        _selectedDates.length >= 5 &&
-        _pickedFiles.isEmpty) {
+    // ── Supporting documents are now required for every leave type ──
+    if (_attachmentRequired && _pickedFiles.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Medical certificate is required')),
+        const SnackBar(
+          content: Text('Please attach at least one supporting document'),
+          backgroundColor: Colors.red,
+        ),
       );
       return;
     }
 
+    // ── Safety-net re-check in case files were picked before the
+    // limit was enforced (e.g. state restored from another source). ──
+    if (_pickedFiles.any((f) => f.size > _maxFileSizeBytes)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('One or more files exceed the 15MB limit'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    setState(() => _isSubmitting = true);
+    _showLoadingDialog();
+
     try {
-      final uri = Uri.parse('http://172.31.16.69/api/v1/leave-requests');
+      final uri = Uri.parse('${ApiConfig.leaveBase}/leave-requests');
       final request = http.MultipartRequest('POST', uri);
 
       request.headers.addAll({'Accept': 'application/json'});
@@ -578,7 +580,7 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen>
       request.fields['reason'] = _reasonController.text;
       request.fields['leave_dates'] = jsonEncode(
         _selectedDates.map((d) {
-          String type = switch (d.portion.name) {
+          String type = switch (d.portion.name.toUpperCase()) {
             'WHOLE' => 'FULL',
             'AM' => 'AM_HALF',
             'PM' => 'PM_HALF',
@@ -592,7 +594,17 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen>
 
       if (_pickedFiles.isNotEmpty) {
         for (var file in _pickedFiles) {
-          if (file.path != null) {
+          if (file.bytes != null) {
+            // ✅ Web AND mobile/desktop (if withData: true) — bytes are always platform-safe
+            request.files.add(
+              http.MultipartFile.fromBytes(
+                'file[]',
+                file.bytes!,
+                filename: file.name,
+              ),
+            );
+          } else if (file.path != null) {
+            // ✅ Fallback for mobile/desktop when bytes weren't loaded
             request.files.add(
               await http.MultipartFile.fromPath('file[]', file.path!),
             );
@@ -603,12 +615,15 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen>
       final streamedResponse = await request.send();
       final response = await http.Response.fromStream(streamedResponse);
 
+      // ── Close the loading modal before showing any result UI ──
+      _hideLoadingDialog();
+
       if (response.statusCode == 200 || response.statusCode == 201) {
         await SuccessModal.show(
           context,
           message: 'Leave submitted successfully',
           description:
-              'Your leave request has been sent to your supervisor for approval.',
+          'Your leave request has been sent to your supervisor for approval.',
           assetImage: 'assets/images/success.png',
           onDone: () {
             Navigator.pushNamed(context, leavesScreenRoute);
@@ -620,42 +635,37 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen>
           _pickedFiles.clear();
           _selectedLeaveType = null;
         });
-      }else if (response.statusCode == 422) {
-  try {
-    final json = jsonDecode(response.body);
+      } else if (response.statusCode == 422) {
+        try {
+          final json = jsonDecode(response.body);
+          String errorMessage = 'Validation failed';
 
-    String errorMessage = 'Validation failed';
+          if (json['message'] != null && json['message'] is String) {
+            errorMessage = json['message'];
+          }
 
-    // 1. Try Laravel "message" first
-    if (json['message'] != null && json['message'] is String) {
-      errorMessage = json['message'];
-    }
+          if (json['errors'] != null && json['errors'] is Map) {
+            final errors = json['errors'] as Map;
+            if (errors.isNotEmpty) {
+              final firstKey = errors.keys.first;
+              final firstError = errors[firstKey];
+              if (firstError is List && firstError.isNotEmpty) {
+                errorMessage = firstError.first.toString();
+              } else if (firstError is String) {
+                errorMessage = firstError;
+              }
+            }
+          }
 
-    // 2. Then try "errors" map (Laravel standard)
-    if (json['errors'] != null && json['errors'] is Map) {
-      final errors = json['errors'] as Map;
-
-      if (errors.isNotEmpty) {
-        final firstKey = errors.keys.first;
-        final firstError = errors[firstKey];
-
-        if (firstError is List && firstError.isNotEmpty) {
-          errorMessage = firstError.first.toString();
-        } else if (firstError is String) {
-          errorMessage = firstError;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(errorMessage)),
+          );
+        } catch (e) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Validation error: ${response.body}')),
+          );
         }
-      }
-    }
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(errorMessage)),
-    );
-  } catch (e) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Validation error: ${response.body}')),
-    );
-  }
-} else if (response.statusCode == 207) {
+      } else if (response.statusCode == 207) {
         final json = jsonDecode(response.body);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -672,15 +682,20 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen>
         final json = jsonDecode(response.body);
         print('ERROR RESPONSE: $json');
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content: Text(json['message'] ?? 'Something went wrong')),
+          SnackBar(content: Text(json['message'] ?? 'Something went wrong')),
         );
       }
     } catch (e) {
+      // ── Make sure the modal is closed even if the request throws ──
+      _hideLoadingDialog();
       debugPrint('EXCEPTION: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Network error')),
       );
+    } finally {
+      if (mounted) {
+        setState(() => _isSubmitting = false);
+      }
     }
   }
 
@@ -709,7 +724,9 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen>
         ),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios, color: Colors.black, size: 20.0),
-          onPressed: () => Navigator.pushNamed(context, leavesScreenRoute),
+          onPressed: _isSubmitting
+              ? null
+              : () => Navigator.pushNamed(context, leavesScreenRoute),
         ),
         titleTextStyle: const TextStyle(
           color: Colors.black,
@@ -750,7 +767,9 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen>
                   final selected = _selectedLeaveType?.id == lt.id;
 
                   return GestureDetector(
-                    onTap: () {
+                    onTap: _isSubmitting
+                        ? null
+                        : () {
                       setState(() {
                         _selectedLeaveType = lt;
                         _recomputeAttachmentRule();
@@ -772,15 +791,31 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen>
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Container(
-                            width: 48,
-                            height: 48,
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(8),
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: Container(
+                              width: 48,
+                              height: 48,
                               color: selected ? Colors.white12 : _bgColor,
-                              image: DecorationImage(
-                                image: AssetImage(lt.imageAsset),
-                                fit: BoxFit.cover,
+                              child: TweenAnimationBuilder<double>(
+                                tween: Tween<double>(
+                                  begin: 1.6,
+                                  end: selected ? 1.0 : 1.6,
+                                ),
+                                duration: const Duration(milliseconds: 500),
+                                curve: Curves.easeOutBack,
+                                builder: (context, scale, child) {
+                                  return Transform.scale(
+                                    scale: scale,
+                                    child: child,
+                                  );
+                                },
+                                child: Image.asset(
+                                  lt.imageAsset,
+                                  fit: BoxFit.cover,
+                                  width: 48,
+                                  height: 48,
+                                ),
                               ),
                             ),
                           ),
@@ -798,9 +833,7 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen>
                                         style: TextStyle(
                                           fontWeight: FontWeight.bold,
                                           fontSize: 14,
-                                          color: selected
-                                              ? Colors.white
-                                              : Colors.black87,
+                                          color: selected ? Colors.white : Colors.black87,
                                         ),
                                       ),
                                     ),
@@ -808,7 +841,9 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen>
                                       height: 26,
                                       width: 26,
                                       child: ElevatedButton(
-                                        onPressed: () {
+                                        onPressed: _isSubmitting
+                                            ? null
+                                            : () {
                                           Navigator.pushNamed(
                                             context,
                                             leaveTypeDetailscreenRoute,
@@ -819,18 +854,15 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen>
                                           );
                                         },
                                         style: ElevatedButton.styleFrom(
-                                          backgroundColor: selected
-                                              ? Colors.white24
-                                              : _bgColor,
-                                          foregroundColor: selected
-                                              ? Colors.white
-                                              : Colors.black54,
+                                          backgroundColor:
+                                          selected ? Colors.white24 : _bgColor,
+                                          foregroundColor:
+                                          selected ? Colors.white : Colors.black54,
                                           padding: EdgeInsets.zero,
                                           shape: const CircleBorder(),
                                           elevation: 0,
                                         ),
-                                        child: const Icon(Icons.info_outline,
-                                            size: 15),
+                                        child: const Icon(Icons.info_outline, size: 15),
                                       ),
                                     ),
                                   ],
@@ -842,9 +874,7 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen>
                                   overflow: TextOverflow.ellipsis,
                                   style: TextStyle(
                                     fontSize: 12,
-                                    color: selected
-                                        ? Colors.white70
-                                        : Colors.black45,
+                                    color: selected ? Colors.white70 : Colors.black45,
                                   ),
                                 ),
                               ],
@@ -854,8 +884,7 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen>
                       ),
                     ),
                   );
-                },
-              ),
+                },),
 
               const SizedBox(height: 16),
 
@@ -883,11 +912,11 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen>
 
               // ── Reason tappable field ──────────────────────
               GestureDetector(
-                onTap: _showReasonModal,
+                onTap: _isSubmitting ? null : _showReasonModal,
                 child: Container(
                   width: double.infinity,
                   padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                   decoration: BoxDecoration(
                     color: _cardColor,
                     borderRadius: BorderRadius.circular(10),
@@ -917,62 +946,15 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen>
 
               const SizedBox(height: 10),
 
-              // ── Unfilled leave notice ──────────────────────
-              // Card(
-              //   elevation: 0,
-              //   shape: RoundedRectangleBorder(
-              //     borderRadius: BorderRadius.circular(8),
-              //     side: BorderSide(color: Colors.grey.shade300, width: 1),
-              //   ),
-              //   color: Colors.transparent,
-              //   child: Padding(
-              //     padding: const EdgeInsets.all(12),
-              //     child: Row(
-              //       crossAxisAlignment: CrossAxisAlignment.start,
-              //       children: [
-              //         const Text('❗', style: TextStyle(fontSize: 20)),
-              //         const SizedBox(width: 8),
-              //         Expanded(
-              //           child: Column(
-              //             crossAxisAlignment: CrossAxisAlignment.start,
-              //             mainAxisAlignment: MainAxisAlignment.center,
-              //             children: [
-              //               Text(
-              //                 "You have unfilled leave",
-              //                 style: TextStyle(
-              //                   fontSize: 13,
-              //                   fontWeight: FontWeight.w600,
-              //                   color: Colors.primaries[4],
-              //                   height: 1.3,
-              //                 ),
-              //               ),
-              //               const SizedBox(height: 2),
-              //               const Text(
-              //                 "File it to ensure your leave records are complete.",
-              //                 style: TextStyle(
-              //                   fontSize: 12,
-              //                   color: Colors.black54,
-              //                   height: 1.4,
-              //                 ),
-              //               ),
-              //             ],
-              //           ),
-              //         ),
-              //       ],
-              //     ),
-              //   ),
-              // ),
-
-              const SizedBox(height: 10),
-
-              // ── Medical certificate (conditional) ──────────
-              if (_selectedLeaveType?.name.toLowerCase() == 'sick leave' &&
-                  _selectedDates.length >= 5) ...[
-                const Padding(
-                  padding: EdgeInsets.only(left: 4, bottom: 8),
+              // ── Supporting documents (now shown AND required for every leave type) ──
+              if (_selectedLeaveType != null) ...[
+                Padding(
+                  padding: const EdgeInsets.only(left: 4, bottom: 8),
                   child: Text(
-                    'Medical Certificate (Required)',
-                    style: TextStyle(
+                    _attachmentRequired
+                        ? 'Supporting Documents (Required)'
+                        : 'Supporting Documents',
+                    style: const TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w800,
                       color: Colors.black,
@@ -981,8 +963,19 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen>
                   ),
                 ),
 
+                Padding(
+                  padding: const EdgeInsets.only(left: 4, bottom: 8),
+                  child: Text(
+                    'Max file size: 15MB per file',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Colors.black45,
+                    ),
+                  ),
+                ),
+
                 GestureDetector(
-                  onTap: _pickFiles,
+                  onTap: _isSubmitting ? null : _pickFiles,
                   child: Container(
                     width: double.infinity,
                     padding: const EdgeInsets.symmetric(
@@ -990,7 +983,11 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen>
                     decoration: BoxDecoration(
                       color: _cardColor,
                       borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: _borderColor),
+                      border: Border.all(
+                        color: (_attachmentRequired && _pickedFiles.isEmpty)
+                            ? Colors.red.withOpacity(0.6)
+                            : _borderColor,
+                      ),
                     ),
                     child: Row(
                       children: [
@@ -1062,7 +1059,7 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen>
                                   Expanded(
                                     child: Column(
                                       crossAxisAlignment:
-                                          CrossAxisAlignment.start,
+                                      CrossAxisAlignment.start,
                                       children: [
                                         Text(
                                           file.name,
@@ -1082,7 +1079,9 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen>
                                     ),
                                   ),
                                   GestureDetector(
-                                    onTap: () {
+                                    onTap: _isSubmitting
+                                        ? null
+                                        : () {
                                       setState(() {
                                         _pickedFiles.removeAt(
                                             _pickedFiles.indexOf(file));
@@ -1095,7 +1094,7 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen>
                                         color: _bgColor,
                                         shape: BoxShape.circle,
                                         border:
-                                            Border.all(color: _borderColor),
+                                        Border.all(color: _borderColor),
                                       ),
                                       child: const Icon(Icons.close,
                                           size: 14, color: Colors.black54),
@@ -1109,6 +1108,18 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen>
                           ],
                         );
                       }).toList(),
+                    ),
+                  ),
+                ] else if (_attachmentRequired) ...[
+                  const SizedBox(height: 6),
+                  Padding(
+                    padding: const EdgeInsets.only(left: 4),
+                    child: Text(
+                      'At least one supporting document is required to submit this leave.',
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        color: Colors.red.shade600,
+                      ),
                     ),
                   ),
                 ],
@@ -1129,89 +1140,95 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen>
         ),
         child: _selectedDates.isEmpty
             ? SizedBox(
-                height: 58,
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: _selectedLeaveType == null
-                      ? null
-                      : () {
-                          openLeaveDateBottomSheet(context, (dates) {
-                            setState(() => _selectedDates = dates);
-                          });
-                        },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: _selectedLeaveType == null
-                        ? const Color(0xFFDDDFE2)
-                        : Colors.black,
-                    elevation: 0,
-                    shape: const StadiumBorder(),
-                  ),
-                  child: Text(
-                    _selectedLeaveType == null
-                        ? 'Select Leave Type'
-                        : 'Choose Dates to Apply',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w600,
-                      fontSize: 15,
-                    ),
-                  ),
-                ),
-              )
+          height: 58,
+          width: double.infinity,
+          child: ElevatedButton(
+            onPressed: (_selectedLeaveType == null || _isSubmitting)
+                ? null
+                : _openLeaveDateScreen,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: _selectedLeaveType == null
+                  ? const Color(0xFFDDDFE2)
+                  : Colors.black,
+              elevation: 0,
+              shape: const StadiumBorder(),
+            ),
+            child: Text(
+              _selectedLeaveType == null
+                  ? 'Select Leave Type'
+                  : 'Choose Dates to Apply',
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w600,
+                fontSize: 15,
+              ),
+            ),
+          ),
+        )
             : SizedBox(
-                height: 50,
-                child: Row(
-                  children: [
-                    Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        GestureDetector(
-                          onTap: () {
-                            openLeaveDateBottomSheet(context, (dates) {
-                              setState(() => _selectedDates = dates);
-                            });
-                          },
-                          child: Text(
-                            'See Dates',
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: Colors.primaries[4],
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ),
-                        Text(
-                          'You selected ${_selectedDates.length} days',
-                          style: const TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const Spacer(),
-                    SizedBox(
-                      width: 150,
-                      height: 75,
-                      child: ElevatedButton(
-                        onPressed: () => _submitApplication(widget.staffId),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF0866FF),
-                          elevation: 0,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(30),
-                          ),
-                        ),
-                        child: const Text(
-                          'Submit',
-                          style: TextStyle(fontSize: 14, color: Colors.white),
-                        ),
+          height: 50,
+          child: Row(
+            children: [
+              Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  GestureDetector(
+                    onTap: _isSubmitting ? null : _openLeaveDateScreen,
+                    child: Text(
+                      'See Dates',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Colors.primaries[4],
+                        fontWeight: FontWeight.w500,
                       ),
                     ),
-                  ],
+                  ),
+                  Text(
+                    'You selected ${_selectedDates.length} days',
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+              const Spacer(),
+              SizedBox(
+                width: 150,
+                height: 75,
+                child: ElevatedButton(
+                  onPressed: (_isSubmitting ||
+                      (_attachmentRequired && _pickedFiles.isEmpty))
+                      ? null
+                      : () => _submitApplication(widget.staffId),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF0866FF),
+                    disabledBackgroundColor:
+                    const Color(0xFF0866FF).withOpacity(0.6),
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(30),
+                    ),
+                  ),
+                  child: _isSubmitting
+                      ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                      : const Text(
+                    'Submit',
+                    style: TextStyle(fontSize: 14, color: Colors.white),
+                  ),
                 ),
               ),
+            ],
+          ),
+        ),
       ),
     );
   }

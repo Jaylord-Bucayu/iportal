@@ -4,12 +4,14 @@ import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:http/http.dart' as http;
 
+import '../../../services/api_config.dart';
+
 // ════════════════════════════════════════════════════
 // TOKENS — Meta / Facebook
 // ════════════════════════════════════════════════════
 
 class _M {
-  static const bg          = Color(0xFFF0F2F5);
+  static const bg          = Color(0xFFF1F7FC);
   static const surface     = Color(0xFFFFFFFF);
   static const ink         = Color(0xFF1C1E21);
   static const inkSub      = Color(0xFF65676B);
@@ -67,9 +69,7 @@ class _Entry {
   double get absAmt   => changeAmount.abs();
 
   String get amtLabel {
-    final s = absAmt % 1 == 0
-        ? absAmt.toInt().toString()
-        : absAmt.toStringAsFixed(1);
+    final s = absAmt.toStringAsFixed(3);
     return '${isCredit ? '+' : '−'}$s d';
   }
 
@@ -120,7 +120,7 @@ class _ScreenState extends State<LeaveLedgerScreen>
     try {
       final r = await http
           .get(Uri.parse(
-              'http://172.31.16.69/api/v1/leave-balances-history/${widget.staffId}'))
+              '${ApiConfig.leaveBase}/leave-balances-history/${widget.staffId}'))
           .timeout(const Duration(seconds: 15));
       if (r.statusCode == 200) {
         final data = jsonDecode(r.body)['data'] as List;
@@ -159,8 +159,8 @@ class _ScreenState extends State<LeaveLedgerScreen>
   }
 
   List<_Entry> get _filtered => _all.where((e) {
-        if (_tab == 'Credit' && !e.isCredit) return false;
-        if (_tab == 'Debit' && e.isCredit) return false;
+        if (_tab == 'Earned' && !e.isCredit) return false;
+        if (_tab == 'Used' && e.isCredit) return false;
         if (_range != null) {
           final end = _range!.end
               .add(const Duration(hours: 23, minutes: 59, seconds: 59));
@@ -433,9 +433,9 @@ class _FilterCard extends StatelessWidget {
         children: [
           _Chip(label: 'All',    active: tab == 'All',    onTap: () => onTab('All')),
           const SizedBox(width: 4),
-          _Chip(label: 'Credit', active: tab == 'Credit', onTap: () => onTab('Credit')),
+          _Chip(label: 'Earned', active: tab == 'Earned', onTap: () => onTab('Earned')),
           const SizedBox(width: 4),
-          _Chip(label: 'Debit',  active: tab == 'Debit',  onTap: () => onTab('Debit')),
+          _Chip(label: 'Used',  active: tab == 'Used',  onTap: () => onTab('Used')),
           const Spacer(),
 
           // Date button

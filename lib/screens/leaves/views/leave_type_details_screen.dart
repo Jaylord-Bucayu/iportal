@@ -1,5 +1,150 @@
 import 'package:flutter/material.dart';
 
+/// 🔹 CONFIG MODEL — holds all the rules/content that differ per leave type
+class LeaveTypeConfig {
+  final String duration;
+  final String eligibility;
+  final String approval;
+  final List<String> requirements;
+  final List<String> steps;
+  final String tipTitle;
+  final String tipText;
+
+  const LeaveTypeConfig({
+    required this.duration,
+    required this.eligibility,
+    required this.approval,
+    required this.requirements,
+    required this.steps,
+    required this.tipTitle,
+    required this.tipText,
+  });
+}
+
+/// 🔹 CENTRAL LOOKUP — add/edit a leave type's rules here only
+final Map<String, LeaveTypeConfig> leaveTypeConfigs = {
+  "Vacation Leave": const LeaveTypeConfig(
+    duration: "15 Days",
+    eligibility: "2-3 Eligible",
+    approval: "Manager Approval",
+    requirements: [
+      "Leave Form",
+      "Manager Approval",
+      "HR Validation",
+    ],
+    steps: [
+      "Select your vacation leave dates.",
+      "Submit your request at least 5 days before the leave date.",
+      "Wait for manager approval.",
+      "Wait for HR confirmation.",
+    ],
+    tipTitle: "Tip",
+    tipText:
+    "Vacation leave must be filed at least 5 days before your intended leave date. Late requests may not be approved.",
+  ),
+
+  "Sick Leave": const LeaveTypeConfig(
+    duration: "15 Days",
+    eligibility: "2-3 Eligible",
+    approval: "Easy Approval",
+    requirements: [
+      "Medical Certificate",
+      "File Attachment (within 5 days)",
+      "Manager Approval",
+      "HR Validation",
+    ],
+    steps: [
+      "Select the sick leave date (past or future).",
+      "Attach your medical certificate or supporting document.",
+      "Submit within 5 days of the leave date.",
+      "Wait for HR confirmation.",
+    ],
+    tipTitle: "Tip",
+    tipText:
+    "Sick leave can be filed for a previous or upcoming date, but a supporting file attachment (e.g. medical certificate) must be submitted within 5 days.",
+  ),
+
+  "Emergency Leave": const LeaveTypeConfig(
+    duration: "3 Days",
+    eligibility: "1-2 Eligible",
+    approval: "Urgent Approval",
+    requirements: [
+      "Justification / Reason",
+      "Manager Approval",
+      "HR Validation",
+    ],
+    steps: [
+      "Select today or tomorrow's date.",
+      "State the reason for the emergency.",
+      "Submit immediately for urgent review.",
+      "Wait for HR confirmation.",
+    ],
+    tipTitle: "Tip",
+    tipText:
+    "Emergency leave can only be filed for today or the next day. Submit as soon as possible for faster urgent processing.",
+  ),
+
+  "Special Leave": const LeaveTypeConfig(
+    duration: "7 Days",
+    eligibility: "2-3 Eligible",
+    approval: "HR Approval",
+    requirements: [
+      "Supporting Document",
+      "Leave Form",
+      "HR Validation",
+    ],
+    steps: [
+      "Select leave dates and specify the special leave reason.",
+      "Upload the supporting document (e.g. government/legal notice).",
+      "Submit at least 7 days before the leave date.",
+      "Wait for HR confirmation.",
+    ],
+    tipTitle: "Tip",
+    tipText:
+    "Special leave (SPL) requires a supporting document and should be filed at least 7 days in advance whenever possible.",
+  ),
+
+  "Forced Leave": const LeaveTypeConfig(
+    duration: "5 Days",
+    eligibility: "All Employees",
+    approval: "Auto-Applied",
+    requirements: [
+      "HR Notice",
+      "Acknowledgement",
+    ],
+    steps: [
+      "HR issues a forced leave notice.",
+      "Review the scheduled forced leave dates.",
+      "Acknowledge the notice.",
+      "Leave is automatically applied to your record.",
+    ],
+    tipTitle: "Tip",
+    tipText:
+    "Forced leave is scheduled by HR/management and applied automatically. No manual application is required — just acknowledge the notice.",
+  ),
+};
+
+/// 🔹 DEFAULT FALLBACK — used if a title doesn't match any config above
+const LeaveTypeConfig _defaultConfig = LeaveTypeConfig(
+  duration: "15 Days",
+  eligibility: "2-3 Eligible",
+  approval: "Easy Approval",
+  requirements: [
+    "Leave Form",
+    "Manager Approval",
+    "HR Validation",
+  ],
+  steps: [
+    "Select leave dates and type.",
+    "Upload required documents.",
+    "Submit for approval.",
+    "Wait for HR confirmation.",
+  ],
+  tipTitle: "Tip",
+  tipText:
+  "Submit your leave request at least 3 days before your intended leave date.",
+);
+
 class LeaveTypeDetails extends StatelessWidget {
   final String title;
   final String imagePath;
@@ -10,8 +155,12 @@ class LeaveTypeDetails extends StatelessWidget {
     required this.imagePath,
   });
 
+  LeaveTypeConfig get _config => leaveTypeConfigs[title] ?? _defaultConfig;
+
   @override
   Widget build(BuildContext context) {
+    final config = _config;
+
     return Scaffold(
       backgroundColor: Colors.grey[100],
       body: SingleChildScrollView(
@@ -27,7 +176,7 @@ class LeaveTypeDetails extends StatelessWidget {
                   width: double.infinity,
                   child: ClipRRect(
                     child: Image.asset(
-                      imagePath, // now dynamic
+                      imagePath,
                       fit: BoxFit.cover,
                     ),
                   ),
@@ -37,7 +186,6 @@ class LeaveTypeDetails extends StatelessWidget {
                 Container(
                   height: 250,
                   decoration: BoxDecoration(
-                    
                     gradient: LinearGradient(
                       begin: Alignment.bottomCenter,
                       end: Alignment.topCenter,
@@ -54,7 +202,7 @@ class LeaveTypeDetails extends StatelessWidget {
                   bottom: 20,
                   left: 20,
                   child: Text(
-                    title, // now dynamic
+                    title,
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: 22,
@@ -81,22 +229,22 @@ class LeaveTypeDetails extends StatelessWidget {
 
             const SizedBox(height: 20),
 
-            /// 🔹 INFO ROW
+            /// 🔹 INFO ROW — now dynamic per leave type
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: const [
-                  InfoItem(icon: Icons.schedule, label: "15 Days"),
-                  InfoItem(icon: Icons.people, label: "2-3 Eligible"),
-                  InfoItem(icon: Icons.verified, label: "Easy Approval"),
+                children: [
+                  InfoItem(icon: Icons.schedule, label: config.duration),
+                  InfoItem(icon: Icons.people, label: config.eligibility),
+                  InfoItem(icon: Icons.verified, label: config.approval),
                 ],
               ),
             ),
 
             const SizedBox(height: 25),
 
-            /// 🔹 ELIGIBILITY SECTION
+            /// 🔹 ELIGIBILITY / REQUIREMENTS SECTION
             const Padding(
               padding: EdgeInsets.symmetric(horizontal: 20),
               child: Text(
@@ -115,11 +263,9 @@ class LeaveTypeDetails extends StatelessWidget {
               child: Wrap(
                 spacing: 40,
                 runSpacing: 10,
-                children: const [
-                  BulletItem(text: "Medical Certificate"),
-                  BulletItem(text: "Manager Approval"),
-                  BulletItem(text: "Leave Form"),
-                  BulletItem(text: "HR Validation"),
+                children: [
+                  for (final req in config.requirements)
+                    BulletItem(text: req),
                 ],
               ),
             ),
@@ -140,29 +286,17 @@ class LeaveTypeDetails extends StatelessWidget {
 
             const SizedBox(height: 15),
 
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 20),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
               child: Column(
                 children: [
-                  StepItem(
-                    number: 1,
-                    text: "Select leave dates and type.",
-                  ),
-                  SizedBox(height: 12),
-                  StepItem(
-                    number: 2,
-                    text: "Upload required documents.",
-                  ),
-                  SizedBox(height: 12),
-                  StepItem(
-                    number: 3,
-                    text: "Submit for approval.",
-                  ),
-                  SizedBox(height: 12),
-                  StepItem(
-                    number: 4,
-                    text: "Wait for HR confirmation.",
-                  ),
+                  for (int i = 0; i < config.steps.length; i++) ...[
+                    if (i > 0) const SizedBox(height: 12),
+                    StepItem(
+                      number: i + 1,
+                      text: config.steps[i],
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -187,17 +321,15 @@ class LeaveTypeDetails extends StatelessWidget {
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
-                        children: const [
+                        children: [
                           Text(
-                            "Tip",
-                            style: TextStyle(
+                            config.tipTitle,
+                            style: const TextStyle(
                               fontWeight: FontWeight.bold,
                             ),
                           ),
-                          SizedBox(height: 5),
-                          Text(
-                            "Submit your leave request at least 3 days before your intended leave date.",
-                          ),
+                          const SizedBox(height: 5),
+                          Text(config.tipText),
                         ],
                       ),
                     )
@@ -227,11 +359,12 @@ class InfoItem extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        Icon(icon, color: Colors.green),
+        Icon(icon, color: Colors.black),
         const SizedBox(height: 5),
         Text(
           label,
           style: const TextStyle(fontSize: 13),
+          textAlign: TextAlign.center,
         ),
       ],
     );
@@ -249,7 +382,7 @@ class BulletItem extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        const Icon(Icons.circle, size: 8, color: Colors.green),
+        const Icon(Icons.circle, size: 8, color: Colors.black),
         const SizedBox(width: 6),
         Text(text),
       ],
@@ -275,7 +408,7 @@ class StepItem extends StatelessWidget {
       children: [
         CircleAvatar(
           radius: 14,
-          backgroundColor: Colors.green,
+          backgroundColor: Colors.black,
           child: Text(
             number.toString(),
             style: const TextStyle(

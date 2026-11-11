@@ -3,10 +3,12 @@
   import 'dart:convert';
   import 'package:http/http.dart' as http;
   import 'package:shop/route/screen_export.dart';
+import 'package:shop/services/api_config.dart';
 
   const Map<int, String> leaveTypeNames = {
     1: 'Vacation Leave',
     2: 'Sick Leave',
+    3: 'Special Privilege Leave',
     16: 'Emergency Leave',
   };
 
@@ -28,7 +30,7 @@
     factory EventItem.fromJson(Map<String, dynamic> json) {
       final int typeId = json['leave_type_id'] ?? 0;
       return EventItem(
-        id: json['id'].toString(),
+        id: json['request_id'].toString(),
         leaveType: leaveTypeNames[typeId] ?? 'Unknown Leave',
         staffName: json['staff_name'] ?? '',
         staffId: json['staff_id'] ?? 0,
@@ -75,32 +77,35 @@
 
 
 
-  Future<LeaveResponse> fetchUpcomingLeaves() async {
-    final url = Uri.parse(
-      'http://172.31.16.69/api/v1/leave-pending/authority?limit=$limit'
-    );
+    Future<LeaveResponse> fetchUpcomingLeaves() async {
+      final url = Uri.parse(
+        '${ApiConfig.leaveBase}/leave-pending/authority?limit=$limit',
+      );
 
-    final body = jsonEncode({
-      'authority_type': status,
-      'authority_id': authorityId
-    });
+      final body = jsonEncode({
+        'status_filter': 'pending',
+        'authority_id': authorityId,
+      });
 
-    final response = await http.post(
-      url,
-      headers: {
-        'Accept': 'application/json',
-        'Content-Type': 'application/json'
-      },
-      body: body,
-    );
+      final response = await http.post(
+        url,
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: body,
+      );
 
-    if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
-      return LeaveResponse.fromJson(data);
-    } else {
-      throw Exception('Failed to load leaves');
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+
+        return LeaveResponse.fromJson(data);
+      } else {
+        throw Exception(
+          'Failed to load leaves: ${response.statusCode} ${response.body}',
+        );
+      }
     }
-  }
 
 
     Widget _buildShimmer() {
@@ -262,11 +267,14 @@
     // Individual leave card
     Widget _buildLeaveCard(BuildContext context, EventItem e) {
       return GestureDetector(
-        onTap: () => Navigator.pushNamed(
+        onTap: ()
+        {
+          debugPrint('Opening leave ID: ${e.id}, leaveType: ${e.leaveType}');
+          Navigator.pushNamed(
           context,
           leaveDetailsScreenRoute,
           arguments: e.id,
-        ),
+        );},
         child: Container(
           width: 150,
           padding: const EdgeInsets.all(14),

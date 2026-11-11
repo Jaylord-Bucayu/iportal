@@ -1,37 +1,45 @@
-import 'dart:io'; // 👈 Add this for HttpOverrides
-
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
-import 'package:shop/firebase_options.dart';
+import 'package:shop/firebase_options_prod.dart' as prod;
+import 'package:shop/firebase_options_staging.dart' as staging;
 import 'package:shop/route/route_constants.dart';
 import 'package:shop/route/router.dart' as router;
 import 'package:shop/theme/app_theme.dart';
 import 'package:shop/providers/auth_provider.dart';
+import 'http_overrides.dart';
+
+const String env = String.fromEnvironment('ENV', defaultValue: 'production');
 
 Future<void> _backgroundMessage(RemoteMessage message) async {}
-
-/// 👇 Add this class to allow self-signed SSL certs
-class MyHttpOverrides extends HttpOverrides {
-  @override
-  HttpClient createHttpClient(SecurityContext? context) {
-    return super.createHttpClient(context)
-      ..badCertificateCallback =
-          (X509Certificate cert, String host, int port) => true;
-  }
-}
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  HttpOverrides.global = MyHttpOverrides();
+  // No-op on web, sets self-signed-cert bypass on native.
+  setHttpOverrides();
 
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-  FirebaseMessaging.onBackgroundMessage(_backgroundMessage);
-  //FlutterGemma.initialize(); // ← required before anything else
+  final firebaseOptions = env == 'staging'
+      ? staging.DefaultFirebaseOptions.currentPlatform
+      : prod.DefaultFirebaseOptions.currentPlatform;
 
-  runApp(const ProviderScope(child: MyApp()));
+  try {
+    await Firebase.initializeApp(
+      options: firebaseOptions,
+    ).timeout(const Duration(seconds: 10));
+
+    FirebaseMessaging.onBackgroundMessage(_backgroundMessage);
+  } catch (e, st) {
+    // Don't let a Firebase failure block the app from starting.
+    debugPrint('Firebase init failed: $e\n$st');
+  }
+
+  runApp(
+    const ProviderScope(
+      child: MyApp(),
+    ),
+  );
 }
 
 class MyApp extends StatefulWidget {
@@ -51,51 +59,101 @@ class _MyAppState extends State<MyApp> {
   }
 
   Future<void> _loadAuth() async {
-    final container = ProviderScope.containerOf(context, listen: false);
-    await container.read(authProvider.notifier).loadFromPrefs();
+    final container = ProviderScope.containerOf(
+      context,
+      listen: false,
+    );
 
-    // Always show splash for 4 seconds
-    await Future.delayed(const Duration(seconds: 4));
-
-    if (mounted) {
-      setState(() {
-        _isLoading = false;
-      });
+    try {
+      // Run auth loading and the minimum splash time in parallel,
+      // with a timeout so a hanging request can't block the app forever.
+      await Future.wait([
+        container
+            .read(authProvider.notifier)
+            .loadFromPrefs()
+            .timeout(const Duration(seconds: 10)),
+        Future.delayed(const Duration(seconds: 4)),
+      ]);
+    } catch (e, st) {
+      debugPrint('Auth load failed: $e\n$st');
+      // Optional: clear bad saved data so the next launch works.
+      // await container.read(authProvider.notifier).logout();
+    } finally {
+      // Always leave the splash screen, even if loading failed.
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    // --------------------------------------------------
+    // SPLASH SCREEN
+    // --------------------------------------------------
     if (_isLoading) {
-      // Show splash screen
       return const MaterialApp(
         debugShowCheckedModeBanner: false,
         home: SplashScreen(),
       );
     }
 
+    // --------------------------------------------------
+    // MAIN APP
+    // --------------------------------------------------
     return Consumer(
       builder: (context, ref, _) {
         final authUser = ref.watch(authProvider);
 
         return MaterialApp(
           debugShowCheckedModeBanner: false,
-          title: 'DSWD FOII IPortal',
+
+          title: 'DSWD FO2 IPortal',
+
           theme: AppTheme.lightTheme(context),
+
           themeMode: ThemeMode.light,
+
           onGenerateRoute: router.generateRoute,
+
           initialRoute: authUser != null
               ? entryPointScreenRoute
               : onbordingScreenRoute,
+
+          // --------------------------------------------------
+          // RESPONSIVE WEB WIDTH
+          // --------------------------------------------------
+          builder: (context, child) {
+            return Container(
+              color: Colors.white,
+              alignment: Alignment.topCenter,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(
+                  maxWidth: 600,
+                ),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: child ?? const SizedBox.shrink(),
+                ),
+              ),
+            );
+          },
         );
       },
     );
   }
 }
 
-/// 👇 Splash Screen with Fade-in PNG and 4 seconds display
+// ==========================================================
+// SPLASH SCREEN
+// ==========================================================
+
 class SplashScreen extends StatefulWidget {
-  const SplashScreen({super.key});
+  const SplashScreen({
+    super.key,
+  });
 
   @override
   State<SplashScreen> createState() => _SplashScreenState();
@@ -110,10 +168,15 @@ class _SplashScreenState extends State<SplashScreen>
   void initState() {
     super.initState();
 
-    // Fade-in duration: 2 seconds
-    _controller =
-        AnimationController(vsync: this, duration: const Duration(seconds: 2));
-    _animation = Tween<double>(begin: 0, end: 1).animate(_controller);
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 2),
+    );
+
+    _animation = Tween<double>(
+      begin: 0,
+      end: 1,
+    ).animate(_controller);
 
     _controller.forward();
   }
@@ -126,17 +189,24 @@ class _SplashScreenState extends State<SplashScreen>
 
   @override
   Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.sizeOf(context).width;
+
+    // Responsive loader size.
+    final loaderSize = screenWidth < 430
+        ? screenWidth * 0.7
+        : 300.0;
+
     return Scaffold(
       backgroundColor: Colors.white,
       body: Center(
         child: FadeTransition(
           opacity: _animation,
           child: Image.asset(
-            'assets/images/dswd-pilipinas.png', // ✅ your PNG
-            width: 200,
-            height: 200,
+            'assets/images/splash.gif',
+            width: loaderSize,
+            height: loaderSize,
+            gaplessPlayback: true,
           ),
-          
         ),
       ),
     );

@@ -11,33 +11,46 @@ const productDemoImg6 = "https://files01.pna.gov.ph/ograph/2022/12/12/lgzp-slpla
 
 
 // lib/constants.dart
-/// Centralized mapping of deduction/benefit codes to their SVG icons.
-/// All icons are expected under `assets/logo/`.
+
+/// One icon shared by every deduction whose name contains any of [keywords].
+class _IconRule {
+  final List<String> keywords; // already UPPERCASE, no spaces or dashes
+  final String file;
+  const _IconRule(this.keywords, this.file);
+}
+
+/// Maps a deduction name to its icon URL by keyword, so every variant
+/// (GSIS REL, GSIS CONSO LOAN, PAG-IBIG MP2, SWEAP LOAN, ...) shares one image.
 class DeductionIcons {
-  static const String basePath = 'assets/logo';
+  static const String baseUrl = 'https://fo2-staff-search.dswd.gov.ph/uploads/logo';
 
-  /// Map code -> asset path
-  static const Map<String, String> map = {
-    'PHIC': '$basePath/phic.png',
-    'PAG-IBIG CONT': '$basePath/pagibig.png',
-    'PAG-IBIG MP2': '$basePath/pagibigMP2.png',
-    'PAG-IBIG MPL': '$basePath/pagibigMPL.png',
+  /// First rule that matches wins. To share one image across more names,
+  /// add a keyword to an existing rule. To add a new agency, add a new rule.
+  static const List<_IconRule> _rules = [
+    _IconRule(['GSIS'], 'gsis.png'),
+    _IconRule(['PAGIBIG'], 'pag-ibig.png'),
+    _IconRule(['SWEAP'], 'sweap.jpeg'),
+    _IconRule(['PHIC', 'PHILHEALTH'], 'philhealth.png'),
+    _IconRule(['SSS'], 'sss.png'),
+    _IconRule(['LBP', 'LANDBANK'], 'lbpSL.png'),
+    _IconRule(['TAX'], 'bir.png'),
+  ];
 
-    // The following are best-guess filenames — update if your actual files differ.
-    'PAG-IBIG CL': '$basePath/pagibigCL.png',        // Calamity Loan
-    'PAG-IBIG REL': '$basePath/pagibigREL.png',      // Restructured Loan
-    'PAG-IBIG SL': '$basePath/pagibigSL.png',        // Short-term Loan
-    'SSS CONT': '$basePath/sss.png',
-    'GSIS CONSO LOAN': '$basePath/gsisConsoLoan.png',
-    'GSIS REL': '$basePath/gsisREL.png',
-    'LBP SL': '$basePath/lbpSL.png',                 // LandBank Salary Loan
-    'SWEAP CONT': '$basePath/sweap.jpg',
-    'SWEAP LOAN': '$basePath/sweap.jpg',
-  };
+  /// Uppercase and strip everything except letters and digits, so
+  /// "Pag-IBIG MP2", "PAG IBIG MP2" and "PAGIBIG MP2" all become "PAGIBIGMP2".
+  static String _normalize(String s) =>
+      s.toUpperCase().replaceAll(RegExp(r'[^A-Z0-9]'), '');
 
-  /// Returns the asset path for a given code, or a fallback.
-  static String assetFor(String code, {String fallback = '$basePath/default.svg'}) {
-    return map[code.trim().toUpperCase()] ?? fallback;
+  /// Returns the icon URL for a deduction name. An empty string means
+  /// "no icon", and the deduction row then shows its built-in document icon.
+  static String assetFor(String name, {String fallback = ''}) {
+    final n = _normalize(name);
+    for (final rule in _rules) {
+      for (final k in rule.keywords) {
+        if (n.contains(k)) return '$baseUrl/${rule.file}';
+      }
+    }
+    return fallback;
   }
 }
 
@@ -50,7 +63,7 @@ const grandisExtendedFont = "Grandis Extended";
 const Color primaryColor = Color.fromARGB(255, 12, 77, 162);
 
 const MaterialColor primaryMaterialColor =
-    MaterialColor(0xFF0C4DA2, <int, Color>{
+MaterialColor(0xFF0C4DA2, <int, Color>{
   50: Color(0xFFE2EAF4), // Lightest shade
   100: Color(0xFFB6CBE6),
   200: Color(0xFF85A9D7),
@@ -117,7 +130,7 @@ const pasNotMatchErrorText = "passwords do not match";
 // DESIGN TOKENS
 // ════════════════════════════════════════════════════
 
- abstract class C {
+abstract class C {
   static const primary      = Color(0xFF1877F2);
   static const primaryLight = Color(0xFFE7F0FD);
   static const bg           = Color(0xFFF0F2F5);

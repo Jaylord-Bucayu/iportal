@@ -1,5 +1,9 @@
 {
   "projects": {
-    "default": "manifest-emblem-451812-h1"
-  }
+    "default": "manifest-emblem-451812-h1",
+    "production": "manifest-emblem-451812-h1",
+    "staging": "dswd-events"
+  },
+  "targets": {},
+  "etags": {}
 }

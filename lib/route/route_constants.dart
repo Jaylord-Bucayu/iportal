@@ -61,12 +61,14 @@ const String thanksForOrderScreenRoute = "thanks_order";
 const String directoryScreenRoute = "directory";
 const String directoryDetailsScreenRoute = "directory_details";
 const String docsScreenRoute = "docs";
+const String networkErrorScreenRoute = "network_error";
 
 /*-----------------------------LEAVE ROUTES -------------------------------------------*/
 const String leavesScreenRoute = "leaves";
 const String leaveRequestsScreenRoute = "view_all_leaves";
 const String leaveDetailsScreenRoute = "leave_details";
 const String applyLeaveScreenRoute = "apply_leave";
+const String editLeaveScreenRoute = 'edit_leave_screen';
 const String leavePDFScreenRoute = "leave_pdf";
 const String leaveListForApprovalLeavecreenRoute = "approval_leave_list";
 const String leaveTypeDetailscreenRoute = "leave_type_details";
@@ -100,3 +102,8 @@ const String qrApprovalInfoScreenRoute = "qr_approval_info";
 
 /*-----------------------------MY DOCUMENTS ROUTES -------------------------------------------*/
 const String myDocumentsScreenRoute = "my_documents";
+
+
+/*-----------------------------NEWS ROUTES -------------------------------------------*/
+const String newsWpScreenRoute = "news_wp";
+const String newsWpAllScreenRoute = "news_wp_all";

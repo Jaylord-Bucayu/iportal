@@ -1,33 +1,33 @@
 {
   "project_info": {
-    "project_number": "910193430774",
-    "project_id": "manifest-emblem-451812-h1",
-    "storage_bucket": "manifest-emblem-451812-h1.firebasestorage.app"
+    "project_number": "94985969200",
+    "project_id": "dswd-events",
+    "storage_bucket": "dswd-events.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:910193430774:android:9b4a6f11bc9473b1861cd7",
+        "mobilesdk_app_id": "1:94985969200:android:dbb2082e433c95a1aa17f5",
         "android_client_info": {
           "package_name": "com.example.shop"
         }
       },
       "oauth_client": [
         {
-          "client_id": "910193430774-1c12kv1l5impgglm852gjkbh6hd4jdq3.apps.googleusercontent.com",
+          "client_id": "94985969200-l9u6os9neolges8r517gvqf1ghsnp98p.apps.googleusercontent.com",
           "client_type": 3
         }
       ],
       "api_key": [
         {
-          "current_key": "AIzaSyDxJH9vcmSQhg2YLDgUFxk1jpUicAXBc-E"
+          "current_key": "AIzaSyAhKhrYzSGLxzcOTfU5Sv-2Azncg-hlc6s"
         }
       ],
       "services": {
         "appinvite_service": {
           "other_platform_oauth_client": [
             {
-              "client_id": "910193430774-1c12kv1l5impgglm852gjkbh6hd4jdq3.apps.googleusercontent.com",
+              "client_id": "94985969200-l9u6os9neolges8r517gvqf1ghsnp98p.apps.googleusercontent.com",
               "client_type": 3
             }
           ]

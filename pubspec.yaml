@@ -8,6 +8,11 @@ version: 1.0.0+1
 environment:
   sdk: ">=3.2.0 <4.0.0"
 
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/images/dswd-iportal-logo.png"
+
 dependencies:
   flutter:
     sdk: flutter
@@ -46,12 +51,18 @@ dependencies:
   webview_flutter: ^4.13.0
   flutter_inappwebview: ^6.1.5
   pdfx: ^2.4.0
+  geolocator: ^13.0.4
   #flutter_pdfview: ^1.4.3
   # syncfusion_flutter_pdfviewer: ^31.1.19
+  flutter_web_auth_2: ^4.0.0
+  crypto: ^3.0.3
+  web: ^1.0.0
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
+
+  flutter_launcher_icons: ^0.14.4
 
 
   flutter_lints: ^4.0.0
@@ -63,7 +74,7 @@ dev_dependencies:
 
 flutter_native_splash:
   color: "#ffffff"  # Background color of splash screen
-  image: assets/images/dswd-pilipinas.png  # Your logo image
+  image: assets/images/dswd-iportal-logo.png  # Your logo image
   android: true
   ios: true  
   

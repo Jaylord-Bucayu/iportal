@@ -6,6 +6,8 @@ import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import 'package:shop/route/route_constants.dart';
 
+import '../../../services/api_config.dart';
+
 // ─── Design System ────────────────────────────────────────────────────────────
 class _DS {
   // Brand
@@ -165,6 +167,54 @@ extension LeaveStatusX on LeaveStatus {
   return (bg: _DS.otherBg, fg: _DS.other, icon: Icons.calendar_today_rounded, label: raw ?? 'Leave');
 }
 
+// ─── Leave status resolver ────────────────────────────────────────────────────
+// A leave request's `status` field often reflects the current WORKFLOW STAGE
+// (e.g. "for_hr_review", "for_approval") rather than the final decision.
+// The actual outcome — approved / disapproved — lives in the nested
+// `approvals` object (mirrors the logic used on the leave detail screen).
+// We must check `approvals` FIRST; only fall back to the raw `status`
+// string if there's no approvals data to go on. Otherwise an approved
+// request whose `status` still holds a stage key (or a value that doesn't
+// exactly match 'approved') will incorrectly render as "Pending".
+Map<String, dynamic>? _approvalsOf(Map<String, dynamic> leave) {
+  final raw = leave['approvals'];
+  if (raw is Map<String, dynamic>) return raw;
+  if (raw is String && raw.isNotEmpty) {
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is Map<String, dynamic>) return decoded;
+    } catch (_) {}
+  }
+  return null;
+}
+
+LeaveStatus _resolveLeaveStatus(Map<String, dynamic> leave, {LeaveStatus? tabOverride}) {
+  // The backend already filters the list by `status_filter` per tab, so
+  // once we're inside a specific tab (Pending / Approved / Disapproved),
+  // every item in that list IS that status — trust the tab rather than
+  // re-deriving it from per-item fields that may not reliably reflect
+  // the final decision (e.g. `status` holding a stage key instead of
+  // the outcome, or no usable `approvals` payload on the list endpoint).
+  if (tabOverride != null && tabOverride != LeaveStatus.all) {
+    return tabOverride;
+  }
+
+  // Only reached for the "All" tab, where items can genuinely be mixed —
+  // best-effort per-item resolution, checking `approvals` before `status`.
+  final approvals = _approvalsOf(leave);
+  if (approvals != null) {
+    if (approvals['approved'] != null) return LeaveStatus.approved;
+    if (approvals['disapproved'] != null) return LeaveStatus.disapproved;
+  }
+
+  final status = (leave['status'] ?? '').toString().trim().toLowerCase();
+  return switch (status) {
+    'approved' || 'accept'                => LeaveStatus.approved,
+    'disapproved' || 'reject' || 'denied' => LeaveStatus.disapproved,
+    _                                      => LeaveStatus.pending,
+  };
+}
+
 // ─── Screen ───────────────────────────────────────────────────────────────────
 class ForLeaveApprovalScreen extends StatefulWidget {
   final String status;
@@ -236,16 +286,20 @@ class _ForLeaveApprovalScreenState extends State<ForLeaveApprovalScreen>
 
     try {
       final payload = {
-        'authority_type': widget.authorityType,
+        // 'authority_type': widget.authorityType,
         'authority_id'  : widget.authorityId.toString(),
         if (_tab != LeaveStatus.all) 'status_filter': _tab.apiValue,
       };
 
       final res = await http.post(
-        Uri.parse('http://172.31.16.69/api/v1/leave-pending/authority'),
+        Uri.parse('${ApiConfig.leaveBase}/leave-pending/authority'),
         headers: {'Accept': 'application/json', 'Content-Type': 'application/json'},
         body: jsonEncode(payload),
       );
+
+      debugPrint('Status Code: ${res.statusCode}');
+      debugPrint('Response Body: ${res.body}');
+
 
       if (!mounted) return;
       if (res.statusCode == 200) {
@@ -259,8 +313,9 @@ class _ForLeaveApprovalScreenState extends State<ForLeaveApprovalScreen>
             if (status == LeaveStatus.all) {
               countMap[status] = raw.length;
             } else {
-              countMap[status] = raw.where((l) =>
-              (l['status'] ?? '').toString().toLowerCase() == status.apiValue).length;
+              countMap[status] = raw
+                  .where((l) => _resolveLeaveStatus(l, tabOverride: LeaveStatus.all) == status)
+                  .length;
             }
           }
         } else {
@@ -398,12 +453,8 @@ class _ForLeaveApprovalScreenState extends State<ForLeaveApprovalScreen>
 
   Widget _buildCard(Map<String, dynamic> leave, int index) {
     final type   = _leaveType(leave['leave_type']?['name']?.toString());
-    final status = (leave['status'] ?? '').toString().toLowerCase();
-    final leaveStatus = switch (status) {
-      'approved' || 'accept'                  => LeaveStatus.approved,
-      'disapproved' || 'reject' || 'denied'   => LeaveStatus.disapproved,
-      _                                        => LeaveStatus.pending,
-    };
+
+    final leaveStatus = _resolveLeaveStatus(leave, tabOverride: _tab);
 
     final delay = (index * 0.055).clamp(0.0, 0.55);
     final end   = (delay + 0.35).clamp(0.0, 1.0);
@@ -424,7 +475,7 @@ class _ForLeaveApprovalScreenState extends State<ForLeaveApprovalScreen>
             Navigator.pushNamed(
               context,
               _tab == LeaveStatus.pending ? leaveDetailsScreenRoute : leaveActionScreenRoute,
-              arguments: leave['id'].toString(),
+              arguments: leave['request_id'].toString(),
             );
           },
           child: Padding(

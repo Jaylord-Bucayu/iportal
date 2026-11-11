@@ -1,8 +1,9 @@
 import 'dart:convert';
-import 'dart:io';
+import 'dart:ui';
 
 import 'package:animations/animations.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -10,6 +11,13 @@ import 'package:http/http.dart' as http;
 import 'package:shop/constants.dart';
 import 'package:shop/route/screen_export.dart';
 import 'package:shop/providers/auth_provider.dart';
+import 'package:shop/screens/directory/views/directory_screen.dart';
+import 'package:shop/services/api_config.dart';
+
+/// Height of the glass nav bar (not counting the bottom safe-area inset).
+/// Add this + the bottom inset as bottom padding in your scrollable pages
+/// so the last item isn't hidden behind the bar.
+const double glassNavBarHeight = 64;
 
 class EntryPoint extends ConsumerStatefulWidget {
   const EntryPoint({super.key});
@@ -21,17 +29,28 @@ class EntryPoint extends ConsumerStatefulWidget {
 class _EntryPointState extends ConsumerState<EntryPoint> {
   final List _pages = [
     const HomeScreen(),
-    DirectoryHomeScreen(),
+    const DirectoryHomeScreen(),
     const ProfileScreen(),
   ];
   int _currentIndex = 0;
+  int _unreadNotifications = 0;
 
   Future<void> _saveFcmToken(String token, String staffId) async {
     try {
-      final device = Platform.isAndroid ? 'android' : 'ios';
+      final String device;
+
+      if (kIsWeb) {
+        device = 'web';
+      } else if (defaultTargetPlatform == TargetPlatform.android) {
+        device = 'android';
+      } else if (defaultTargetPlatform == TargetPlatform.iOS) {
+        device = 'ios';
+      } else {
+        device = 'unknown';
+      }
 
       final response = await http.post(
-        Uri.parse('http://172.31.16.69/api/v1/notifications/save-fcm'),
+        Uri.parse('${ApiConfig.fcmSaveUrl}'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'token': token,
@@ -43,7 +62,8 @@ class _EntryPointState extends ConsumerState<EntryPoint> {
       if (response.statusCode == 200 || response.statusCode == 201) {
         print('FCM token saved successfully');
       } else {
-        print('Failed to save FCM token: ${response.statusCode} ${response.body}');
+        print(
+            'Failed to save FCM token: ${response.statusCode} ${response.body}');
       }
     } catch (e) {
       print('Error saving FCM token: $e');
@@ -69,7 +89,8 @@ class _EntryPointState extends ConsumerState<EntryPoint> {
 
     if (settings.authorizationStatus == AuthorizationStatus.authorized) {
       print('User granted permission');
-    } else if (settings.authorizationStatus == AuthorizationStatus.provisional) {
+    } else if (settings.authorizationStatus ==
+        AuthorizationStatus.provisional) {
       print('User granted provisional permission');
     } else {
       print('User declined or has not accepted permission');
@@ -84,49 +105,20 @@ class _EntryPointState extends ConsumerState<EntryPoint> {
       await _saveFcmToken(token, staffId);
     }
 
-    // Foreground notification
+    // Foreground notification — no popup, just badge the bell icon
     FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-      final title = message.notification?.title ?? "N/A";
-      final body = message.notification?.body ?? "N/A";
-
-      showDialog(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: Text(title),
-          content: Text(
-            body,
-            maxLines: 1,
-            style: const TextStyle(overflow: TextOverflow.ellipsis),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.pop(context);
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => NotificationsDetailsScreen(
-                      body: body,
-                      title: title,
-                    ),
-                  ),
-                );
-              },
-              child: const Text("View"),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text("Dismiss"),
-            ),
-          ],
-        ),
-      );
+      if (!mounted) return;
+      setState(() {
+        _unreadNotifications++;
+      });
     });
 
-    // App opened from background notification
+    // App opened from background notification (user tapped the tray notification)
     FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
       final title = message.notification?.title ?? "N/A";
       final body = message.notification?.body ?? "N/A";
+
+      if (mounted) setState(() => _unreadNotifications = 0);
 
       Navigator.push(
         context,
@@ -137,11 +129,13 @@ class _EntryPointState extends ConsumerState<EntryPoint> {
       );
     });
 
-    // App opened from terminated state
+    // App opened from terminated state (cold start via tapped notification)
     FirebaseMessaging.instance.getInitialMessage().then((message) {
       if (message != null) {
         final title = message.notification?.title ?? "N/A";
         final body = message.notification?.body ?? "N/A";
+
+        if (mounted) setState(() => _unreadNotifications = 0);
 
         Navigator.push(
           context,
@@ -164,136 +158,205 @@ class _EntryPointState extends ConsumerState<EntryPoint> {
   Widget build(BuildContext context) {
     final auth = ref.watch(authProvider);
     final staffId = auth?.staffId?.toString() ?? '';
-    final fullName = auth?.fullName ?? 'User';
     final imageUrl =
         'https://fo2-staff-search.dswd.gov.ph/images/$staffId.jpg';
 
-    SvgPicture svgIcon(String src, {Color? color}) {
-      return SvgPicture.asset(
-        src,
-        height: 24,
-      );
-    }
-
     return Scaffold(
+      extendBody: true,
       appBar: AppBar(
-        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+        backgroundColor: Colors.white,
         leading: const SizedBox(),
         leadingWidth: 0,
         centerTitle: false,
         toolbarHeight: 80,
-        title: Row(
-          children: [
-            ClipOval(
-              child: Image.network(
-                imageUrl,
-                height: 45,
-                width: 45,
-                fit: BoxFit.cover,
-                loadingBuilder: (context, child, loadingProgress) {
-                  if (loadingProgress == null) return child;
-                  return Container(
-                    height: 45,
-                    width: 45,
-                    color: Colors.grey.shade200,
-                    child: const Center(
-                      child: SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
+        title: Image.asset(
+          "assets/images/app-logo.png",
+          height: 36,
+        ),
+        actions: [
+          IconButton(
+            icon: Badge(
+              isLabelVisible: _unreadNotifications > 0,
+              label: Text(
+                _unreadNotifications > 9 ? '9+' : '$_unreadNotifications',
+                style: const TextStyle(fontSize: 10),
+              ),
+              backgroundColor: const Color(0xFFE2420E),
+              child: const Icon(Icons.notifications_none_rounded),
+            ),
+            iconSize: 26,
+            tooltip: 'Notifications',
+            onPressed: () {
+              setState(() => _unreadNotifications = 0);
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => NotificationsScreen(),
+                ),
+              );
+            },
+          ),
+          const SizedBox(width: 8),
+        ],
+      ),
+      body: Stack(
+        children: [
+          // ── MAIN PAGE (scrolls behind the glass bar) ──
+          Positioned.fill(
+            child: PageTransitionSwitcher(
+              duration: defaultDuration,
+              transitionBuilder: (child, animation, secondAnimation) {
+                return FadeThroughTransition(
+                  animation: animation,
+                  secondaryAnimation: secondAnimation,
+                  child: child,
+                );
+              },
+              child: _pages[_currentIndex],
+            ),
+          ),
+
+          // ── GLASS NAVIGATION BAR ──
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: _GlassNavBar(
+              currentIndex: _currentIndex,
+              imageUrl: imageUrl,
+              onTap: (index) {
+                if (index != _currentIndex) {
+                  setState(() => _currentIndex = index);
+                }
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Full-width frosted-glass bottom navigation bar.
+/// Icon on top, label underneath. The active tab uses [_activeColor].
+/// Content scrolling behind it is blurred.
+class _GlassNavBar extends StatelessWidget {
+  const _GlassNavBar({
+    required this.currentIndex,
+    required this.onTap,
+    required this.imageUrl,
+  });
+
+  final int currentIndex;
+  final ValueChanged<int> onTap;
+  final String imageUrl;
+
+  static const Color _activeColor = primaryColor; // from constants.dart
+  static const Color _inactiveColor = Color(0xFF3A3F55);
+
+  static const List<_NavItem> _items = [
+    _NavItem(icon: "assets/icons/Home.svg", label: "Home"),
+    _NavItem(icon: "assets/icons/Location.svg", label: "Offices"),
+    _NavItem(icon: "assets/icons/User.svg", label: "Profile"),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomInset = MediaQuery.of(context).padding.bottom;
+
+    return ClipRect(
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+        child: Container(
+          height: glassNavBarHeight + bottomInset,
+          padding: EdgeInsets.only(bottom: bottomInset),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.70),
+            border: Border(
+              top: BorderSide(color: Colors.black.withOpacity(0.05)),
+            ),
+          ),
+          child: Row(
+            children: List.generate(_items.length, (index) {
+              final bool isActive = index == currentIndex;
+              final bool isProfile = index == _items.length - 1;
+              final Color color = isActive ? _activeColor : _inactiveColor;
+
+              return Expanded(
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => onTap(index),
+                  child: Center(
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      curve: Curves.easeOut,
+                      width: 56,
+                      height: 40,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: isActive
+                            ? _activeColor.withOpacity(0.14)
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: isProfile
+                          ? _Avatar(
+                        imageUrl: imageUrl,
+                        borderColor: isActive
+                            ? _activeColor
+                            : Colors.transparent,
+                      )
+                          : SvgPicture.asset(
+                        _items[index].icon,
+                        height: 24,
+                        width: 24,
+                        colorFilter:
+                        ColorFilter.mode(color, BlendMode.srcIn),
                       ),
                     ),
-                  );
-                },
-                errorBuilder: (context, error, stackTrace) {
-                  return Container(
-                    height: 45,
-                    width: 45,
-                    decoration: BoxDecoration(
-                      color: Colors.grey.shade300,
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(
-                      Icons.person,
-                      size: 26,
-                      color: Colors.white,
-                    ),
-                  );
-                },
-              ),
-            ),
-            const SizedBox(width: 12),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  'Hi, $fullName',
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
                   ),
                 ),
-                const SizedBox(height: 2),
-                const Text(
-                  'Welcome to DSWD FO2 IPORTAL',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.normal,
-                    color: Colors.black87,
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-      body: PageTransitionSwitcher(
-        duration: defaultDuration,
-        transitionBuilder: (child, animation, secondAnimation) {
-          return FadeThroughTransition(
-            animation: animation,
-            secondaryAnimation: secondAnimation,
-            child: child,
-          );
-        },
-        child: _pages[_currentIndex],
-      ),
-      bottomNavigationBar: Container(
-        child: BottomNavigationBar(
-          currentIndex: _currentIndex,
-          onTap: (index) {
-            if (index != _currentIndex) {
-              setState(() {
-                _currentIndex = index;
-              });
-            }
-          },
-          backgroundColor: Colors.white,
-          type: BottomNavigationBarType.fixed,
-          selectedFontSize: 10,
-          unselectedFontSize: 10,
-          selectedItemColor: primaryColor,
-          items: [
-            BottomNavigationBarItem(
-              icon: svgIcon("assets/icons/Home.svg"),
-              activeIcon: svgIcon("assets/icons/Home.svg", color: primaryColor),
-              label: "Home",
-            ),
-            BottomNavigationBarItem(
-              icon: svgIcon("assets/icons/Location.svg"),
-              activeIcon:
-              svgIcon("assets/icons/Location.svg", color: primaryColor),
-              label: "Directories",
-            ),
-            BottomNavigationBarItem(
-              icon: svgIcon("assets/icons/User.svg"),
-              activeIcon: svgIcon("assets/icons/User.svg", color: primaryColor),
-              label: "Profile",
-            ),
-          ],
+              );
+            }),
+          ),
         ),
       ),
     );
   }
+}
+
+class _Avatar extends StatelessWidget {
+  const _Avatar({required this.imageUrl, required this.borderColor});
+
+  final String imageUrl;
+  final Color borderColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 24,
+      height: 24,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.all(color: borderColor, width: 1.5),
+      ),
+      child: ClipOval(
+        child: Image.network(
+          imageUrl,
+          fit: BoxFit.cover,
+          errorBuilder: (context, error, stackTrace) => Container(
+            color: Colors.grey.shade300,
+            child: const Icon(Icons.person, size: 14, color: Colors.white),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _NavItem {
+  const _NavItem({required this.icon, required this.label});
+
+  final String icon;
+  final String label;
 }

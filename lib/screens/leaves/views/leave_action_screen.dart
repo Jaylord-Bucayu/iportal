@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
+import 'package:intl/intl.dart';
+import 'package:shop/services/api_config.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:shop/constants.dart';
 
@@ -34,20 +36,42 @@ class _M {
   static const rFull = BorderRadius.all(Radius.circular(100));
 
   static List<BoxShadow> get cardShadow => [
-        BoxShadow(
-          color: Colors.black.withOpacity(0.06),
-          blurRadius: 8,
-          offset: const Offset(0, 2),
-        ),
-      ];
+    BoxShadow(
+      color: Colors.black.withOpacity(0.06),
+      blurRadius: 8,
+      offset: const Offset(0, 2),
+    ),
+  ];
 
   static List<BoxShadow> get subtleShadow => [
-        BoxShadow(
-          color: Colors.black.withOpacity(0.04),
-          blurRadius: 4,
-          offset: const Offset(0, 1),
-        ),
-      ];
+    BoxShadow(
+      color: Colors.black.withOpacity(0.04),
+      blurRadius: 4,
+      offset: const Offset(0, 1),
+    ),
+  ];
+}
+
+// ════════════════════════════════════════════════════
+// TIMEZONE HELPER — Asia/Manila (UTC+8)
+// ════════════════════════════════════════════════════
+//
+// The backend stores timestamps in UTC (Laravel/MySQL default).
+// Dart's `DateTime.parse` interprets a string with no timezone
+// designator as the *device's* local time, which is unreliable
+// across users. This helper forces a UTC interpretation and then
+// shifts by the fixed Asia/Manila offset (UTC+8, no DST), so every
+// user sees the same Philippine time regardless of device settings.
+DateTime? parseAsManilaTime(String raw) {
+  if (raw.isEmpty) return null;
+  try {
+    final hasTz =
+        raw.endsWith('Z') || RegExp(r'[+-]\d{2}:?\d{2}$').hasMatch(raw);
+    final utc = DateTime.parse(hasTz ? raw : '${raw}Z').toUtc();
+    return utc.add(const Duration(hours: 8)); // Asia/Manila, UTC+8
+  } catch (_) {
+    return null;
+  }
 }
 
 // ════════════════════════════════════════════════════
@@ -83,15 +107,15 @@ class LeaveApprovals {
   });
 
   factory LeaveApprovals.fromJson(Map<String, dynamic> j) => LeaveApprovals(
-        onDraft: j['on_draft'],
-        forHrReview: j['for_hr_review'],
-        forHrDcReview: j['for_hr_dc_review'],
-        forSupervisorReview: j['for_supervisor_review'],
-        forArdaReview: j['for_approval'],
-        approved: j['approved'],
-        disapproved: j['disapproved'],
-        cancelled: j['cancelled'],
-      );
+    onDraft: j['on_draft'],
+    forHrReview: j['for_hr_review'],
+    forHrDcReview: j['for_hr_dc_review'],
+    forSupervisorReview: j['for_supervisor_review'],
+    forArdaReview: j['for_approval'],
+    approved: j['approved'],
+    disapproved: j['disapproved'],
+    cancelled: j['cancelled'],
+  );
 }
 
 class LeaveRemark {
@@ -105,12 +129,12 @@ class LeaveRemark {
   });
 
   factory LeaveRemark.fromJson(Map<String, dynamic> j) => LeaveRemark(
-        staffName: j['staff_name'] ?? '',
-        stage: j['stage'] ?? '',
-        remarks: j['remarks'] ?? '',
-        action: j['action'] ?? '',
-        createdAt: j['created_at'] ?? '',
-      );
+    staffName: j['staff_name'] ?? '',
+    stage: j['stage'] ?? '',
+    remarks: j['remarks'] ?? '',
+    action: j['action'] ?? '',
+    createdAt: j['created_at'] ?? '',
+  );
 }
 
 class LeaveAttachment {
@@ -125,11 +149,11 @@ class LeaveAttachment {
   });
 
   factory LeaveAttachment.fromJson(Map<String, dynamic> j) => LeaveAttachment(
-        id: j['id'] ?? 0,
-        path: j['path'] ?? '',
-        fileType: j['file_type'] ?? '',
-        createdAt: j['created_at'] ?? '',
-      );
+    id: j['id'] ?? 0,
+    path: j['path'] ?? '',
+    fileType: j['file_type'] ?? '',
+    createdAt: j['created_at'] ?? '',
+  );
 
   static const _base = 'https://fo2-staff-search.dswd.gov.ph/';
 
@@ -137,9 +161,9 @@ class LeaveAttachment {
 
   bool get isImage =>
       fileType == 'jpg' ||
-      fileType == 'jpeg' ||
-      fileType == 'png' ||
-      fileType == 'webp';
+          fileType == 'jpeg' ||
+          fileType == 'png' ||
+          fileType == 'webp';
 
   bool get isPdf => fileType == 'pdf';
 
@@ -240,14 +264,29 @@ class LeaveRequestDetail {
     return d == d.truncateToDouble() ? d.toInt().toString() : d.toString();
   }
 
+  // ── Raw status, normalized (lowercase, trimmed) ──────────
+  // Used internally for logic checks like "is this a draft?"
+  String get normalizedStatus => status.trim().toLowerCase();
+
+  // ── True when this leave request is still an editable/deletable draft ──
+  bool get isDraft =>
+      normalizedStatus == 'on_draft' || normalizedStatus == 'draft';
+
   String get resolvedStatus {
-    final s = status.trim().toLowerCase();
+    final s = normalizedStatus;
     if (s == 'disapproved') return 'Disapproved';
     if (s == 'approved') return 'Approved';
     if (s == 'pending') return 'Pending';
-    return status.isNotEmpty
-        ? status[0].toUpperCase() + status.substring(1)
-        : 'Pending';
+    if (s == 'on_draft' || s == 'draft') return 'Draft';
+    if (s.isEmpty) return 'Pending';
+
+    // Fallback for stage-keyed statuses like "for_supervisor_review"
+    // or "for_hr_dc_review" — split on underscores and title-case each word.
+    return s
+        .split('_')
+        .where((w) => w.isNotEmpty)
+        .map((w) => w[0].toUpperCase() + w.substring(1))
+        .join(' ');
   }
 
   String get typeImagePath {
@@ -279,64 +318,88 @@ class LeaveRequestDetail {
   /// Builds timeline steps and injects matching remarks per stage.
   List<ApprovalStep> buildTimeline() {
     final steps = <ApprovalStep>[];
+    final currentStage = status.trim();
 
     void add(String title, String subtitle, String stageKey, String? ts) {
-      final stageRemarks =
-          remarks.where((r) => r.stage == stageKey).toList();
+      final stageRemarks = remarks.where((r) => r.stage == stageKey).toList();
+      final isCurrent = stageKey == currentStage;
+
       steps.add(ApprovalStep(
         title: title,
-        subtitle: subtitle,
+        subtitle: isCurrent ? 'Currently pending at this stage.' : subtitle,
         timestamp: ts ?? '',
         stageKey: stageKey,
         remarks: stageRemarks,
+        isCurrentStage: isCurrent,
       ));
     }
 
-   add('Request Submitted', 'Leave request was filed.', 'on_draft', createdAt);
 
-  add(
-      'HR Review',
-      'For review by Human Resources.',
-      'for_hr_review',
-      approvals?.forHrReview
-  );
+    add('Request Submitted', 'Leave request was filed.', 'on_draft', createdAt);
 
-  add(
-      'HR DC Review',
-      'For review by HRMDD Division Chief.',
-      'for_hr_dc_review',
-      approvals?.forHrDcReview
-  );
+    add(
+        'HR Review',
+        'For review by Human Resources.',
+        'for_hr_review',
+        approvals?.forHrReview
+    );
 
-  add(
-      'Supervisor Review',
-      'For review by your supervisor.',
-      'for_supervisor_review',
-      approvals?.forSupervisorReview
-  );
+    add(
+        'HR DC Review',
+        'For review by HRMDD Division Chief.',
+        'for_hr_dc_review',
+        approvals?.forHrDcReview
+    );
 
-  add(
-      'Approval Review',
-      'Final review by the approver.',
-      'for_approval',
-      approvals?.forArdaReview
-  );
+    add(
+        'DC Review',
+        'For review by your Division Chief.',
+        'for_supervisor_review',
+        approvals?.forSupervisorReview
+    );
 
+    add(
+        'Approval Review',
+        'Final review by the approver.',
+        'for_approval',
+        approvals?.forArdaReview
+    );
+
+    // ── Terminal outcomes ─────────────────────────────────
+    // Approved / Disapproved / Cancelled are FINAL states, never
+    // "pending". Build these directly instead of via add() so they
+    // don't get matched against `currentStage` (status == 'approved'
+    // would otherwise flip isCurrentStage=true and make the step look
+    // like it's still awaiting action instead of done).
     if (approvals?.approved != null) {
-      add('Approved', 'Leave fully approved. Enjoy your time off!', 'approved',
-          approvals!.approved);
+      steps.add(ApprovalStep(
+        title: 'Approved',
+        subtitle: 'Leave fully approved. Enjoy your time off!',
+        timestamp: approvals!.approved!,
+        stageKey: 'approved',
+        remarks: remarks.where((r) => r.stage == 'approved').toList(),
+        isCurrentStage: false,
+      ));
     } else if (approvals?.disapproved != null) {
-      add(
-        'Disapproved',
-        computationNotes.isNotEmpty
+      steps.add(ApprovalStep(
+        title: 'Disapproved',
+        subtitle: computationNotes.isNotEmpty
             ? computationNotes
             : 'Leave request was disapproved.',
-        'Disapproved',
-        approvals!.disapproved,
-      );
+        timestamp: approvals!.disapproved!,
+        stageKey: 'Disapproved',
+        remarks: remarks.where((r) => r.stage == 'Disapproved').toList(),
+        isCurrentStage: false,
+      ));
     } else if (approvals?.cancelled != null) {
-      add('Cancelled', 'This leave request was cancelled.', 'cancelled',
-          approvals!.cancelled);
+      steps.add(ApprovalStep(
+        title: 'Cancelled',
+        subtitle: 'This leave request was cancelled.',
+        timestamp: approvals!.cancelled!,
+        stageKey: 'cancelled',
+        remarks: remarks.where((r) => r.stage == 'cancelled').toList(),
+        isCurrentStage: false,
+      ));
     }
 
     return steps;
@@ -346,6 +409,7 @@ class LeaveRequestDetail {
 class ApprovalStep {
   final String title, subtitle, timestamp, stageKey;
   final List<LeaveRemark> remarks;
+  final bool isCurrentStage;
 
   const ApprovalStep({
     required this.title,
@@ -353,24 +417,33 @@ class ApprovalStep {
     required this.timestamp,
     required this.stageKey,
     this.remarks = const [],
+    this.isCurrentStage = false,
   });
 
-  bool get isDone => timestamp.isNotEmpty;
+  // A stage only counts as "done" if it has a timestamp AND it isn't
+  // the stage the request is currently sitting at — otherwise a
+  // pending review looks like it was already approved.
+  bool get isDone => timestamp.isNotEmpty && !isCurrentStage;
+  bool get isPending => isCurrentStage;
+
   bool get hasRemarks => remarks.isNotEmpty;
 
+  // Timestamps are converted to Asia/Manila (UTC+8) so every user
+  // sees the same Philippine time regardless of device timezone.
+  DateTime? get _parsedDate => parseAsManilaTime(timestamp);
+
   String get date {
-    if (timestamp.contains('T')) return timestamp.split('T')[0];
-    if (timestamp.contains(' ')) return timestamp.split(' ')[0];
-    return timestamp;
+    final d = _parsedDate;
+    if (d == null) return '';
+    return DateFormat('yyyy-MM-dd').format(d);
   }
 
   String get time {
-    if (timestamp.contains('T')) return timestamp.split('T')[1].split('.')[0];
-    if (timestamp.contains(' ')) return timestamp.split(' ')[1];
-    return '';
+    final d = _parsedDate;
+    if (d == null) return '';
+    return '${DateFormat('h:mm a').format(d).toLowerCase()}';
   }
 }
-
 // ════════════════════════════════════════════════════
 // STATUS HELPERS
 // ════════════════════════════════════════════════════
@@ -406,6 +479,12 @@ class _StatusConfig {
             bg: _M.redBg,
             icon: Icons.cancel_rounded,
             label: 'Disapproved');
+      case 'draft':
+        return const _StatusConfig(
+            fg: _M.textSecondary,
+            bg: Color(0xFFF0F2F5),
+            icon: Icons.edit_note_rounded,
+            label: 'Draft');
       default:
         return const _StatusConfig(
             fg: _M.textSecondary,
@@ -422,13 +501,31 @@ class _StatusConfig {
 
 class _LeaveDetailService {
   static Future<LeaveRequestDetail> fetch(String leaveId) async {
-    final url = Uri.parse('http://172.31.16.69/api/v1/leave-requests/$leaveId');
+    final url = Uri.parse('${ApiConfig.leaveBase}/leave-requests/$leaveId');
     final res = await http.get(url).timeout(const Duration(seconds: 15));
     if (res.statusCode == 200) {
       final json = jsonDecode(res.body);
       return LeaveRequestDetail.fromJson(json['data']);
     } else {
       throw Exception('Server error ${res.statusCode}');
+    }
+  }
+
+  // ── Cancel/Delete a draft leave request ──────────────────
+  // Adjust the method/endpoint here if your backend expects
+  // something different (e.g. a PATCH to set status = 'cancelled').
+  static Future<void> cancel(String leaveId) async {
+    final url = Uri.parse('${ApiConfig.leaveBase}/leave-requests/$leaveId');
+    final res = await http.delete(url).timeout(const Duration(seconds: 15));
+
+    if (res.statusCode != 200 && res.statusCode != 204) {
+      String msg = 'Server error ${res.statusCode}';
+      try {
+        final json = jsonDecode(res.body);
+        if (json['message'] != null) msg = json['message'];
+
+      } catch (_) {}
+      throw Exception(msg);
     }
   }
 }
@@ -447,6 +544,7 @@ class LeaveActionScreen extends StatefulWidget {
 
 class _LeaveActionScreenState extends State<LeaveActionScreen> {
   late Future<LeaveRequestDetail> _future;
+  bool _isCancelling = false;
 
   @override
   void initState() {
@@ -456,6 +554,57 @@ class _LeaveActionScreenState extends State<LeaveActionScreen> {
 
   void _retry() =>
       setState(() => _future = _LeaveDetailService.fetch(widget.leaveId));
+
+  // ── Confirm dialog before cancelling/deleting a draft ─────
+  Future<void> _confirmAndCancel(String leaveId) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: _M.r12),
+        title: const Text(
+          'Cancel this leave request?',
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+        ),
+        content: const Text(
+          'This draft leave request will be permanently deleted. This action cannot be undone.',
+          style: TextStyle(fontSize: 14, color: _M.textSecondary, height: 1.4),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('No, Keep It',
+                style: TextStyle(color: _M.textSecondary)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text(
+              'Yes, Cancel',
+              style: TextStyle(color: _M.redFg, fontWeight: FontWeight.w700),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    setState(() => _isCancelling = true);
+    try {
+      await _LeaveDetailService.cancel(leaveId);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Draft leave request cancelled')),
+      );
+      Navigator.pop(context); // back to leaves list
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to cancel: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _isCancelling = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -480,6 +629,76 @@ class _LeaveActionScreenState extends State<LeaveActionScreen> {
           return _Body(leave: snapshot.data!);
         },
       ),
+      // ── Draft-only cancel/delete bar ──────────────────────
+      bottomNavigationBar: FutureBuilder<LeaveRequestDetail>(
+        future: _future,
+        builder: (context, snapshot) {
+          if (!snapshot.hasData) return const SizedBox.shrink();
+          final leave = snapshot.data!;
+          if (!leave.isDraft) return const SizedBox.shrink();
+
+          return _DraftActionsBar(
+            isBusy: _isCancelling,
+            onCancel: () => _confirmAndCancel(leave.id.toString()),
+          );
+        },
+      ),
+    );
+  }
+}
+
+// ════════════════════════════════════════════════════
+// DRAFT ACTIONS BAR (Cancel / Delete)
+// ════════════════════════════════════════════════════
+
+class _DraftActionsBar extends StatelessWidget {
+  final bool isBusy;
+  final VoidCallback onCancel;
+  const _DraftActionsBar({required this.isBusy, required this.onCancel});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
+      decoration: const BoxDecoration(
+        color: _M.surface,
+        border: Border(top: BorderSide(color: _M.divider)),
+      ),
+      child: SafeArea(
+        top: false,
+        child: SizedBox(
+          width: double.infinity,
+          height: 50,
+          child: ElevatedButton.icon(
+            onPressed: isBusy ? null : onCancel,
+            icon: isBusy
+                ? const SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: Colors.white,
+              ),
+            )
+                : const Icon(Icons.delete_outline_rounded,
+                size: 18, color: Colors.white),
+            label: Text(
+              isBusy ? 'Cancelling…' : 'Cancel / Delete Request',
+              style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+                color: Colors.white,
+              ),
+            ),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: _M.redFg,
+              disabledBackgroundColor: _M.redFg.withOpacity(0.6),
+              elevation: 0,
+              shape: RoundedRectangleBorder(borderRadius: _M.rFull),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -494,7 +713,7 @@ class _Body extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cfg = _StatusConfig.of(leave.resolvedStatus);
+    final cfg = _StatusConfig.of(leave.isDraft ? 'draft' : leave.resolvedStatus);
     final timeline = leave.buildTimeline();
     final totalRemarks = leave.remarks.length;
 
@@ -552,6 +771,12 @@ class _Body extends StatelessWidget {
             children: [
               const SizedBox(height: 12),
 
+              // ── Draft notice banner ───────────
+              if (leave.isDraft) ...[
+                _DraftNoticeBanner(),
+                const SizedBox(height: 8),
+              ],
+
               // ── Hero Card ─────────────────────
               _HeroCard(leave: leave, cfg: cfg),
               const SizedBox(height: 8),
@@ -563,7 +788,7 @@ class _Body extends StatelessWidget {
               // ── Leave Dates ───────────────────
               if (leave.leaveDates.isNotEmpty) ...[
                 _SectionCard(
-                  leading: const Text('📅'),
+                  leading: const Icon(Icons.calendar_today_rounded),
                   title: 'Leave Dates',
                   child: _LeaveDatesGrid(dates: leave.leaveDates),
                 ),
@@ -573,7 +798,7 @@ class _Body extends StatelessWidget {
               // ── Reason ────────────────────────
               if (leave.reason.isNotEmpty) ...[
                 _SectionCard(
-                  leading: const Text('💬'),
+                  leading: const Icon(Icons.chat_bubble_outline_rounded),
                   title: 'Reason',
                   child: _ExpandableText(text: leave.reason),
                 ),
@@ -593,14 +818,14 @@ class _Body extends StatelessWidget {
                   title: 'Approval Timeline',
                   trailing: totalRemarks > 0
                       ? Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(Icons.forum_outlined,
-                                size: 12, color: _M.textTertiary),
-                            const SizedBox(width: 4),
-                            _CountBadge(count: totalRemarks),
-                          ],
-                        )
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.forum_outlined,
+                          size: 12, color: _M.textTertiary),
+                      const SizedBox(width: 4),
+                      _CountBadge(count: totalRemarks),
+                    ],
+                  )
                       : null,
                   child: _TimelineWithRemarks(steps: timeline),
                 ),
@@ -618,11 +843,52 @@ class _Body extends StatelessWidget {
                 const SizedBox(height: 8),
               ],
 
-              const SizedBox(height: 48),
+              // ── Extra bottom padding so content isn't hidden
+              // behind the draft actions bar ────────────────
+              SizedBox(height: leave.isDraft ? 24 : 48),
             ],
           ),
         ),
       ],
+    );
+  }
+}
+
+// ── Draft notice banner ───────────────────────────────
+
+class _DraftNoticeBanner extends StatelessWidget {
+  const _DraftNoticeBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: _M.blueLight,
+          borderRadius: _M.r12,
+          border: Border.all(color: _M.blueMid.withOpacity(0.5)),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Icon(Icons.edit_note_rounded, size: 16, color: _M.blue),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'This leave request is still a draft. You can cancel/delete it below.',
+                style: TextStyle(
+                  fontSize: 12.5,
+                  color: _M.blue.withOpacity(0.9),
+                  height: 1.4,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -707,7 +973,7 @@ class _HeroCard extends StatelessWidget {
                     ),
                     padding: const EdgeInsets.all(12),
                     child:
-                        Image.asset(leave.typeImagePath, fit: BoxFit.contain),
+                    Image.asset(leave.typeImagePath, fit: BoxFit.contain),
                   ),
                   const SizedBox(width: 14),
                   Expanded(
@@ -752,8 +1018,18 @@ class _HeroCard extends StatelessWidget {
 
   String _fmtDate(String raw) {
     if (raw.isEmpty) return '—';
-    final date = raw.contains('T') ? raw.split('T')[0] : raw;
-    return 'Filed $date';
+
+    final date = parseAsManilaTime(raw);
+    if (date == null) return 'Filed $raw';
+
+    final formatted = DateFormat("MMMM d, yyyy 'at' h:mm a").format(date).toLowerCase();
+    // Capitalize the month name again since toLowerCase() lowercases everything
+    final capitalized = formatted.replaceFirstMapped(
+      RegExp(r'^[a-z]'),
+          (m) => m.group(0)!.toUpperCase(),
+    );
+
+    return 'Filed $capitalized PHT';
   }
 }
 
@@ -951,7 +1227,7 @@ class _LeaveDatesGridState extends State<_LeaveDatesGrid> {
   Widget build(BuildContext context) {
     final hasMore = widget.dates.length > _preview;
     final shown =
-        _expanded ? widget.dates : widget.dates.take(_preview).toList();
+    _expanded ? widget.dates : widget.dates.take(_preview).toList();
     final hidden = widget.dates.length - _preview;
 
     return Column(
@@ -1126,7 +1402,7 @@ class _TimelineWithRemarks extends StatelessWidget {
     return Column(
       children: List.generate(
         steps.length,
-        (i) => _TimelineItemWithRemarks(
+            (i) => _TimelineItemWithRemarks(
           step: steps[i],
           isLast: i == steps.length - 1,
         ),
@@ -1149,16 +1425,16 @@ class _TimelineItemWithRemarksState extends State<_TimelineItemWithRemarks> {
   bool _remarksExpanded = false;
 
   String _fmtTime(String raw) {
-    if (raw.isEmpty) return '';
-    final parts = raw.contains('T') ? raw.split('T') : raw.split(' ');
-    if (parts.length == 2) return '${parts[0]}  ${parts[1].split('.')[0]}';
-    return raw;
+    final date = parseAsManilaTime(raw);
+    if (date == null) return '';
+    return '${DateFormat('yyyy-MM-dd  h:mm a').format(date)} PHT';
   }
 
   @override
   Widget build(BuildContext context) {
     final step = widget.step;
     final isDone = step.isDone;
+    final isCurrent = step.isCurrentStage;
     final hasRemarks = step.hasRemarks;
 
     return IntrinsicHeight(
@@ -1175,24 +1451,35 @@ class _TimelineItemWithRemarksState extends State<_TimelineItemWithRemarks> {
                   height: 16,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: isDone ? _M.blue : _M.surface,
+                    color: isDone
+                        ? _M.blue
+                        : isCurrent
+                        ? _M.orangeBg
+                        : _M.surface,
                     border: Border.all(
-                      color: isDone ? _M.blue : _M.divider,
+                      color: isDone
+                          ? _M.blue
+                          : isCurrent
+                          ? _M.orangeFg
+                          : _M.divider,
                       width: isDone ? 0 : 2,
                     ),
                     boxShadow: isDone
                         ? [
-                            BoxShadow(
-                              color: _M.blue.withOpacity(0.25),
-                              blurRadius: 6,
-                              offset: const Offset(0, 2),
-                            )
-                          ]
+                      BoxShadow(
+                        color: _M.blue.withOpacity(0.25),
+                        blurRadius: 6,
+                        offset: const Offset(0, 2),
+                      )
+                    ]
                         : null,
                   ),
                   child: isDone
                       ? const Icon(Icons.check_rounded,
-                          size: 9, color: Colors.white)
+                      size: 9, color: Colors.white)
+                      : isCurrent
+                      ? const Icon(Icons.schedule_rounded,
+                      size: 9, color: _M.orangeFg)
                       : null,
                 ),
                 if (!widget.isLast)
@@ -1202,7 +1489,7 @@ class _TimelineItemWithRemarksState extends State<_TimelineItemWithRemarks> {
                       margin: const EdgeInsets.symmetric(vertical: 4),
                       decoration: BoxDecoration(
                         color:
-                            isDone ? _M.blue.withOpacity(0.2) : _M.divider,
+                        isDone ? _M.blue.withOpacity(0.2) : _M.divider,
                         borderRadius: _M.rFull,
                       ),
                     ),
@@ -1226,17 +1513,49 @@ class _TimelineItemWithRemarksState extends State<_TimelineItemWithRemarks> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Expanded(
-                        child: Text(
-                          step.title,
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                            color:
-                                isDone ? _M.textPrimary : _M.textTertiary,
-                          ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            Flexible(
+                              child: Text(
+                                step.title,
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
+                                  color: isDone
+                                      ? _M.textPrimary
+                                      : isCurrent
+                                      ? _M.orangeFg
+                                      : _M.textTertiary,
+                                ),
+                              ),
+                            ),
+                            if (isCurrent) ...[
+                              const SizedBox(width: 6),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: _M.orangeBg,
+                                  borderRadius: _M.rFull,
+                                ),
+                                child: const Text(
+                                  'PENDING',
+                                  style: TextStyle(
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.w800,
+                                    letterSpacing: 0.3,
+                                    color: _M.orangeFg,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
                         ),
                       ),
-                      if (step.date.isNotEmpty) ...[
+                      // Only show a timestamp for stages that actually
+                      // finished — a pending stage has no completion time.
+                      if (isDone && step.date.isNotEmpty) ...[
                         const SizedBox(width: 8),
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.end,
@@ -1259,9 +1578,9 @@ class _TimelineItemWithRemarksState extends State<_TimelineItemWithRemarks> {
 
                   const SizedBox(height: 2),
                   Text(step.subtitle,
-                      style: const TextStyle(
+                      style: TextStyle(
                           fontSize: 12,
-                          color: _M.textSecondary,
+                          color: isCurrent ? _M.orangeFg : _M.textSecondary,
                           height: 1.4)),
 
                   // ── Remarks toggle pill ───────
@@ -1269,7 +1588,7 @@ class _TimelineItemWithRemarksState extends State<_TimelineItemWithRemarks> {
                     const SizedBox(height: 8),
                     GestureDetector(
                       onTap: () => setState(
-                          () => _remarksExpanded = !_remarksExpanded),
+                              () => _remarksExpanded = !_remarksExpanded),
                       child: Container(
                         padding: const EdgeInsets.symmetric(
                             horizontal: 9, vertical: 5),
@@ -1311,103 +1630,103 @@ class _TimelineItemWithRemarksState extends State<_TimelineItemWithRemarks> {
                       curve: Curves.easeInOut,
                       child: _remarksExpanded
                           ? Padding(
-                              padding: const EdgeInsets.only(top: 10),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: step.remarks.asMap().entries.map(
-                                  (e) {
-                                    final isLastRemark =
-                                        e.key == step.remarks.length - 1;
-                                    final r = e.value;
-                                    return Padding(
-                                      padding: EdgeInsets.only(
-                                          bottom: isLastRemark ? 0 : 10),
-                                      child: Row(
+                        padding: const EdgeInsets.only(top: 10),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: step.remarks.asMap().entries.map(
+                                (e) {
+                              final isLastRemark =
+                                  e.key == step.remarks.length - 1;
+                              final r = e.value;
+                              return Padding(
+                                padding: EdgeInsets.only(
+                                    bottom: isLastRemark ? 0 : 10),
+                                child: Row(
+                                  crossAxisAlignment:
+                                  CrossAxisAlignment.start,
+                                  children: [
+                                    // Avatar
+                                    Container(
+                                      width: 28,
+                                      height: 28,
+                                      decoration: BoxDecoration(
+                                        color: _M.blueLight,
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: Center(
+                                        child: Text(
+                                          r.staffName.isNotEmpty
+                                              ? r.staffName[0]
+                                              .toUpperCase()
+                                              : 'S',
+                                          style: const TextStyle(
+                                              fontSize: 11,
+                                              fontWeight:
+                                              FontWeight.w700,
+                                              color: _M.blue),
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Column(
                                         crossAxisAlignment:
-                                            CrossAxisAlignment.start,
+                                        CrossAxisAlignment.start,
                                         children: [
-                                          // Avatar
+                                          Text(
+                                            r.staffName.isNotEmpty
+                                                ? r.staffName
+                                                : 'System',
+                                            style: const TextStyle(
+                                                fontSize: 12,
+                                                fontWeight:
+                                                FontWeight.w700,
+                                                color: _M.textPrimary),
+                                          ),
+                                          const SizedBox(height: 3),
                                           Container(
-                                            width: 28,
-                                            height: 28,
+                                            width: double.infinity,
+                                            padding: const EdgeInsets
+                                                .symmetric(
+                                                horizontal: 10,
+                                                vertical: 8),
                                             decoration: BoxDecoration(
-                                              color: _M.blueLight,
-                                              shape: BoxShape.circle,
-                                            ),
-                                            child: Center(
-                                              child: Text(
-                                                r.staffName.isNotEmpty
-                                                    ? r.staffName[0]
-                                                        .toUpperCase()
-                                                    : 'S',
-                                                style: const TextStyle(
-                                                    fontSize: 11,
-                                                    fontWeight:
-                                                        FontWeight.w700,
-                                                    color: _M.blue),
+                                              color: _M.bg,
+                                              borderRadius:
+                                              const BorderRadius
+                                                  .only(
+                                                topRight:
+                                                Radius.circular(10),
+                                                bottomLeft:
+                                                Radius.circular(10),
+                                                bottomRight:
+                                                Radius.circular(10),
                                               ),
                                             ),
+                                            child: Text(r.remarks,
+                                                style: const TextStyle(
+                                                    fontSize: 12,
+                                                    color:
+                                                    _M.textSecondary,
+                                                    height: 1.45)),
                                           ),
-                                          const SizedBox(width: 8),
-                                          Expanded(
-                                            child: Column(
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.start,
-                                              children: [
-                                                Text(
-                                                  r.staffName.isNotEmpty
-                                                      ? r.staffName
-                                                      : 'System',
-                                                  style: const TextStyle(
-                                                      fontSize: 12,
-                                                      fontWeight:
-                                                          FontWeight.w700,
-                                                      color: _M.textPrimary),
-                                                ),
-                                                const SizedBox(height: 3),
-                                                Container(
-                                                  width: double.infinity,
-                                                  padding: const EdgeInsets
-                                                      .symmetric(
-                                                      horizontal: 10,
-                                                      vertical: 8),
-                                                  decoration: BoxDecoration(
-                                                    color: _M.bg,
-                                                    borderRadius:
-                                                        const BorderRadius
-                                                            .only(
-                                                      topRight:
-                                                          Radius.circular(10),
-                                                      bottomLeft:
-                                                          Radius.circular(10),
-                                                      bottomRight:
-                                                          Radius.circular(10),
-                                                    ),
-                                                  ),
-                                                  child: Text(r.remarks,
-                                                      style: const TextStyle(
-                                                          fontSize: 12,
-                                                          color:
-                                                              _M.textSecondary,
-                                                          height: 1.45)),
-                                                ),
-                                                const SizedBox(height: 3),
-                                                Text(
-                                                  _fmtTime(r.createdAt),
-                                                  style: const TextStyle(
-                                                      fontSize: 10,
-                                                      color: _M.textTertiary),
-                                                ),
-                                              ],
-                                            ),
+                                          const SizedBox(height: 3),
+                                          Text(
+                                            _fmtTime(r.createdAt),
+                                            style: const TextStyle(
+                                                fontSize: 10,
+                                                color: _M.textTertiary),
                                           ),
                                         ],
                                       ),
-                                    );
-                                  },
-                                ).toList(),
-                              ),
-                            )
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                          ).toList(),
+                        ),
+                      )
                           : const SizedBox.shrink(),
                     ),
                   ],
@@ -1498,7 +1817,7 @@ class _AttachmentTile extends StatelessWidget {
             const SizedBox(width: 8),
             Container(
               padding:
-                  const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
               decoration: BoxDecoration(
                 color: _M.blueLight,
                 borderRadius: _M.rFull,
@@ -1564,7 +1883,7 @@ class _ImagePreviewScreen extends StatelessWidget {
         actions: [
           IconButton(
             icon:
-                const Icon(Icons.open_in_new_rounded, color: Colors.white),
+            const Icon(Icons.open_in_new_rounded, color: Colors.white),
             onPressed: () => launchUrl(Uri.parse(url),
                 mode: LaunchMode.externalApplication),
           ),
@@ -1583,7 +1902,7 @@ class _ImagePreviewScreen extends StatelessWidget {
                 child: CircularProgressIndicator(
                   value: progress.expectedTotalBytes != null
                       ? progress.cumulativeBytesLoaded /
-                          progress.expectedTotalBytes!
+                      progress.expectedTotalBytes!
                       : null,
                   color: Colors.white,
                   strokeWidth: 2,
@@ -1599,7 +1918,7 @@ class _ImagePreviewScreen extends StatelessWidget {
                   SizedBox(height: 8),
                   Text('Failed to load image',
                       style:
-                          TextStyle(color: Colors.white54, fontSize: 13)),
+                      TextStyle(color: Colors.white54, fontSize: 13)),
                 ],
               ),
             ),
@@ -1709,7 +2028,7 @@ class _ErrorView extends StatelessWidget {
                             backgroundColor: _M.blue,
                             foregroundColor: Colors.white,
                             padding:
-                                const EdgeInsets.symmetric(vertical: 14),
+                            const EdgeInsets.symmetric(vertical: 14),
                             shape: RoundedRectangleBorder(
                                 borderRadius: _M.r8),
                             elevation: 0,
